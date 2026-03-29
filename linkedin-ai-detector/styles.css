@@ -1,0 +1,107 @@
+/* LinkedIn AI Post Detector — Styles */
+
+/* ─── Post shading ──────────────────────────────────────────────────── */
+/* Yellow = 1 anchor.  Red = 2+ anchors.                               */
+
+.ai-detector-shaded.ai-detector-yellow {
+  background-color: rgba(234, 179, 8, 0.20) !important;
+  box-shadow: inset 0 0 0 2px rgba(234, 179, 8, 0.50);
+  border-radius: 8px;
+}
+
+.ai-detector-shaded.ai-detector-red {
+  background-color: rgba(239, 68, 68, 0.20) !important;
+  box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.50);
+  border-radius: 8px;
+}
+
+/* ─── Media kill (CSS-driven, catches lazy-loaded too) ──────────────── */
+/* Hide all media inside flagged posts. !important overrides LinkedIn.  */
+/* Also catches background-image wrappers via the .ai-detector-media-kill class. */
+
+.ai-detector-shaded img:not(.ai-detector-dot *),
+.ai-detector-shaded video:not(.ai-detector-dot *),
+.ai-detector-shaded iframe:not(.ai-detector-dot *),
+.ai-detector-shaded canvas:not(.ai-detector-dot *),
+.ai-detector-shaded svg:not(.ai-detector-dot *),
+.ai-detector-shaded audio:not(.ai-detector-dot *),
+.ai-detector-shaded embed:not(.ai-detector-dot *),
+.ai-detector-shaded object:not(.ai-detector-dot *),
+.ai-detector-shaded [data-video]:not(.ai-detector-dot *),
+.ai-detector-shaded .video-js:not(.ai-detector-dot *) {
+  display: none !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* JS adds this class to empty wrapper divs */
+.ai-detector-media-kill {
+  display: none !important;
+  height: 0 !important;
+  max-height: 0 !important;
+  overflow: hidden !important;
+}
+
+/* ─── Small info dot (hover for details) ────────────────────────────── */
+
+.ai-detector-dot {
+  display: block !important;
+  position: absolute !important;
+  top: 12px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 14px !important;
+  height: 14px !important;
+  border-radius: 50% !important;
+  border: 1.5px solid rgba(255, 255, 255, 0.9) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+  cursor: pointer !important;
+  z-index: 9999 !important;
+  transition: transform 0.15s ease !important;
+  opacity: 0.7 !important;
+}
+
+.ai-detector-dot:hover {
+  transform: translateX(-50%) scale(1.6);
+  opacity: 1;
+}
+
+.ai-detector-dot-yellow {
+  background-color: #eab308;
+}
+
+.ai-detector-dot-red {
+  background-color: #ef4444;
+}
+
+/* ─── Global tooltip ────────────────────────────────────────────────── */
+
+.ai-detector-tooltip {
+  display: none;
+  position: fixed;
+  width: 260px;
+  padding: 10px 12px;
+  background: #1e1e1e;
+  color: #e0e0e0;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.ai-detector-tooltip.ai-detector-tooltip--visible {
+  display: block;
+}
+
+.ai-detector-tooltip hr {
+  border: none;
+  border-top: 1px solid #444;
+  margin: 6px 0;
+}
+
+.ai-detector-tooltip strong {
+  font-size: 13px;
+}

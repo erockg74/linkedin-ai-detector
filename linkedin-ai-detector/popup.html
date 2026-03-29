@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 280px;
+      background: #1a1a1a;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      padding: 16px;
+    }
+
+    h1 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      color: #fff;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+    }
+
+    .toggle-wrap {
+      border-bottom: 1px solid #333;
+      padding-bottom: 12px;
+      margin-bottom: 10px;
+    }
+
+    /* Toggle switch */
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+    }
+
+    .switch input { opacity: 0; width: 0; height: 0; }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      inset: 0;
+      background: #444;
+      border-radius: 22px;
+      transition: background 0.2s;
+    }
+
+    .slider::before {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      left: 3px;
+      bottom: 3px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform 0.2s;
+    }
+
+    .switch input:checked + .slider {
+      background: #22c55e;
+    }
+
+    .switch input:checked + .slider::before {
+      transform: translateX(18px);
+    }
+
+    /* Stats */
+    .stat-value {
+      font-weight: 700;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .stat-label {
+      color: #999;
+    }
+
+    /* Legend */
+    .legend {
+      margin-top: 12px;
+      border-top: 1px solid #333;
+      padding-top: 10px;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 3px 0;
+      font-size: 12px;
+      color: #aaa;
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .dot-red { background: #ef4444; }
+    .dot-yellow { background: #eab308; }
+    .dot-green { background: #22c55e; }
+
+    /* Reset button */
+    .btn-reset {
+      margin-top: 12px;
+      width: 100%;
+      padding: 6px;
+      background: #333;
+      color: #aaa;
+      border: 1px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s;
+    }
+
+    .btn-reset:hover {
+      background: #444;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+  <h1>AI Post Detector</h1>
+
+  <div class="toggle-wrap">
+    <div class="row">
+      <span>Enabled</span>
+      <label class="switch">
+        <input type="checkbox" id="toggle" checked>
+        <span class="slider"></span>
+      </label>
+    </div>
+  </div>
+
+  <div class="row">
+    <span class="stat-label">Posts scanned</span>
+    <span class="stat-value" id="scanned">0</span>
+  </div>
+  <div class="row">
+    <span class="stat-label">Flagged as likely AI</span>
+    <span class="stat-value" id="flagged">0</span>
+  </div>
+
+  <div class="legend">
+    <div class="legend-row"><span class="legend-dot dot-red"></span> Likely AI (2+ anchors)</div>
+    <div class="legend-row"><span class="legend-dot dot-yellow"></span> Possibly AI (1 anchor)</div>
+  </div>
+
+  <button class="btn-reset" id="reset">Reset stats</button>
+
+  <script src="popup.js"></script>
+</body>
+</html>
