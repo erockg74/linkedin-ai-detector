@@ -6,7 +6,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
-      width: 280px;
+      width: 300px;
       background: #1a1a1a;
       color: #e0e0e0;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
@@ -17,62 +17,149 @@
     h1 {
       font-size: 15px;
       font-weight: 600;
-      margin-bottom: 12px;
+      margin-bottom: 4px;
       color: #fff;
     }
 
+    .version {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 14px;
+    }
+
+    /* Sections */
+    .section {
+      border-bottom: 1px solid #333;
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+    }
+
+    .section:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+      padding-bottom: 0;
+    }
+
+    label {
+      display: block;
+      font-size: 12px;
+      color: #999;
+      margin-bottom: 6px;
+    }
+
+    /* API key input */
+    .api-key-wrap {
+      display: flex;
+      gap: 6px;
+    }
+
+    .api-key-input {
+      flex: 1;
+      padding: 6px 8px;
+      background: #2a2a2a;
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 12px;
+      font-family: monospace;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    .api-key-input:focus {
+      border-color: #666;
+    }
+
+    .api-key-input::placeholder {
+      color: #555;
+    }
+
+    .btn-save {
+      padding: 6px 12px;
+      background: #333;
+      color: #e0e0e0;
+      border: 1px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s;
+    }
+
+    .btn-save:hover {
+      background: #444;
+      color: #fff;
+    }
+
+    .btn-save.saved {
+      background: #166534;
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+
+    .api-status {
+      font-size: 11px;
+      margin-top: 4px;
+      height: 14px;
+    }
+
+    .api-status.ok { color: #22c55e; }
+    .api-status.missing { color: #f87171; }
+
+    /* Threshold slider */
+    .slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .threshold-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: #444;
+      border-radius: 2px;
+      outline: none;
+    }
+
+    .threshold-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #e0e0e0;
+      cursor: pointer;
+      border: 2px solid #666;
+      transition: background 0.15s;
+    }
+
+    .threshold-slider::-webkit-slider-thumb:hover {
+      background: #fff;
+    }
+
+    .threshold-value {
+      font-weight: 700;
+      color: #fff;
+      font-size: 14px;
+      min-width: 36px;
+      text-align: right;
+    }
+
+    .threshold-desc {
+      font-size: 11px;
+      color: #777;
+      margin-top: 4px;
+    }
+
+    /* Stats */
     .row {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 8px 0;
+      padding: 4px 0;
     }
 
-    .toggle-wrap {
-      border-bottom: 1px solid #333;
-      padding-bottom: 12px;
-      margin-bottom: 10px;
-    }
-
-    /* Toggle switch */
-    .switch {
-      position: relative;
-      width: 40px;
-      height: 22px;
-    }
-
-    .switch input { opacity: 0; width: 0; height: 0; }
-
-    .slider {
-      position: absolute;
-      cursor: pointer;
-      inset: 0;
-      background: #444;
-      border-radius: 22px;
-      transition: background 0.2s;
-    }
-
-    .slider::before {
-      content: "";
-      position: absolute;
-      width: 16px;
-      height: 16px;
-      left: 3px;
-      bottom: 3px;
-      background: #fff;
-      border-radius: 50%;
-      transition: transform 0.2s;
-    }
-
-    .switch input:checked + .slider {
-      background: #22c55e;
-    }
-
-    .switch input:checked + .slider::before {
-      transform: translateX(18px);
-    }
-
-    /* Stats */
     .stat-value {
       font-weight: 700;
       color: #fff;
@@ -83,36 +170,9 @@
       color: #999;
     }
 
-    /* Legend */
-    .legend {
-      margin-top: 12px;
-      border-top: 1px solid #333;
-      padding-top: 10px;
-    }
-
-    .legend-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 3px 0;
-      font-size: 12px;
-      color: #aaa;
-    }
-
-    .legend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .dot-red { background: #ef4444; }
-    .dot-yellow { background: #eab308; }
-    .dot-green { background: #22c55e; }
-
     /* Reset button */
     .btn-reset {
-      margin-top: 12px;
+      margin-top: 8px;
       width: 100%;
       padding: 6px;
       background: #333;
@@ -132,32 +192,37 @@
 </head>
 <body>
   <h1>AI Post Detector</h1>
+  <div class="version">v2.0 — Claude Haiku scoring</div>
 
-  <div class="toggle-wrap">
-    <div class="row">
-      <span>Enabled</span>
-      <label class="switch">
-        <input type="checkbox" id="toggle" checked>
-        <span class="slider"></span>
-      </label>
+  <div class="section">
+    <label for="apiKey">Anthropic API Key</label>
+    <div class="api-key-wrap">
+      <input type="password" id="apiKey" class="api-key-input" placeholder="sk-ant-..." spellcheck="false" autocomplete="off">
+      <button class="btn-save" id="saveKey">Save</button>
     </div>
+    <div class="api-status" id="apiStatus"></div>
   </div>
 
-  <div class="row">
-    <span class="stat-label">Posts scanned</span>
-    <span class="stat-value" id="scanned">0</span>
-  </div>
-  <div class="row">
-    <span class="stat-label">Flagged as likely AI</span>
-    <span class="stat-value" id="flagged">0</span>
-  </div>
-
-  <div class="legend">
-    <div class="legend-row"><span class="legend-dot dot-red"></span> Likely AI (2+ anchors)</div>
-    <div class="legend-row"><span class="legend-dot dot-yellow"></span> Possibly AI (1 anchor)</div>
+  <div class="section">
+    <label for="threshold">Collapse posts scoring above:</label>
+    <div class="slider-wrap">
+      <input type="range" id="threshold" class="threshold-slider" min="0" max="100" value="70">
+      <span class="threshold-value" id="thresholdValue">70%</span>
+    </div>
+    <div class="threshold-desc">Lower = more aggressive filtering</div>
   </div>
 
-  <button class="btn-reset" id="reset">Reset stats</button>
+  <div class="section">
+    <div class="row">
+      <span class="stat-label">Posts scanned</span>
+      <span class="stat-value" id="scanned">0</span>
+    </div>
+    <div class="row">
+      <span class="stat-label">Posts collapsed</span>
+      <span class="stat-value" id="collapsed">0</span>
+    </div>
+    <button class="btn-reset" id="reset">Reset stats</button>
+  </div>
 
   <script src="popup.js"></script>
 </body>

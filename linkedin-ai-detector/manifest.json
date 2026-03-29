@@ -1,15 +1,19 @@
 {
   "manifest_version": 3,
   "name": "LinkedIn AI Post Detector",
-  "version": "1.0.0",
-  "description": "Detects likely AI-generated posts in your LinkedIn feed using client-side pattern matching.",
-  "permissions": ["activeTab", "storage"],
+  "version": "2.0.0",
+  "description": "Detects AI-generated posts in your LinkedIn feed using Claude Haiku scoring. BYOK.",
+  "permissions": ["storage", "webRequest", "activeTab", "scripting"],
+  "host_permissions": ["*://*.linkedin.com/*", "https://api.anthropic.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
   "content_scripts": [
     {
       "matches": ["*://*.linkedin.com/*"],
       "js": ["content.js"],
       "css": ["styles.css"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
   "action": {
