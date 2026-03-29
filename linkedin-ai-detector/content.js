@@ -81,16 +81,23 @@
     {
       label: "Non-human emoji",
       test: (text) => {
-        // Human emojis: faces, people, hand gestures, hearts
-        // Anything outside these sets is an AI tell
-        const HUMAN_EMOJI = /[\u{1F600}-\u{1F64F}\u{1F466}-\u{1F487}\u{1F3C2}-\u{1F3C4}\u{1F3CA}-\u{1F3CC}\u{1F46A}-\u{1F490}\u{1F500}-\u{1F567}\u{1F910}-\u{1F92F}\u{1F970}-\u{1F976}\u{1F978}-\u{1F97A}\u{1F9B0}-\u{1F9B9}\u{1F9D0}-\u{1F9FF}\u{1FAC0}-\u{1FAC5}\u{1FAE0}-\u{1FAE8}\u{2764}\u{FE0F}?\u{1F90D}-\u{1F90F}\u{1F493}-\u{1F49F}\u{1F491}\u{1F48B}\u{270B}\u{270C}\u{261D}\u{1F44A}-\u{1F44F}\u{1F450}\u{1F64C}\u{1F64F}\u{1F91A}-\u{1F91F}\u{1F932}-\u{1F933}\u{1FAF0}-\u{1FAF8}\u{1F9B5}\u{1F9B6}\u{1F595}\u{1F596}\u{1F448}-\u{1F44D}]/gu;
+        // Small whitelist of emojis real humans commonly use on LinkedIn.
+        // Anything NOT on this list is treated as an AI tell.
+        const COMMON_HUMAN = new Set([
+          "😀", "😁", "😂", "🤣", "😃", "😄", "😅", "😆", "😉", "😊",
+          "😎", "😍", "🥰", "😘", "😜", "😝", "🤗", "🤔", "😏", "😬",
+          "😢", "😭", "😤", "🥺", "😳", "🙄", "😱", "🤦", "🤷",
+          "👍", "👎", "👏", "🙌", "🤝", "✌️", "🤞", "💪", "👋", "🙏",
+          "❤️", "🥲", "💯", "🔥", "✅", "❌", "⬆️", "⬇️",
+          "😈", "👀", "💀", "☠️", "🤡", "🎉", "🎊",
+        ]);
         // Get all emojis in text
         const allEmojis = text.match(
           /[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu
         );
         if (!allEmojis || allEmojis.length === 0) return false;
-        // Filter out human emojis
-        const nonHuman = allEmojis.filter((e) => !HUMAN_EMOJI.test(e));
+        // Any emoji not in the common human set is suspicious
+        const nonHuman = allEmojis.filter((e) => !COMMON_HUMAN.has(e));
         return nonHuman.length >= 1;
       },
     },
@@ -272,14 +279,16 @@
     if (!isFeedPage()) return; // SPA navigation guard
 
     // Phase 1: Find all substantial text elements on the page
-    const textEls = document.querySelectorAll('p, span[dir="ltr"]');
+    const textEls = document.querySelectorAll(
+      'p, span[dir="ltr"], .feed-shared-inline-show-more-text, .break-words'
+    );
 
     // Map: post boundary → { anchorsHit: Set, card }
     const hitMap = new Map();
 
     for (const el of textEls) {
       const text = (el.innerText || "").trim();
-      if (text.length < 50) continue;
+      if (text.length < 20) continue;
 
       // Skip headings / UI chrome
       if (el.closest("h2") || el.closest("h3") || el.closest("h4")) continue;
