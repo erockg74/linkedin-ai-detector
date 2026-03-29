@@ -410,4 +410,12 @@
         // Re-check for recycled DOM elements that lost their shading
         document.querySelectorAll(`[${PROCESSED_ATTR}]`).forEach((el) => {
           if (!el.querySelector(".ai-detector-dot")) {
-            el.r
+            el.removeAttribute(PROCESSED_ATTR);
+          }
+        });
+        scanPage();
+      }, RESCAN_INTERVAL);
+    }
+  }
+
+})();
