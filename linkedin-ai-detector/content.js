@@ -322,9 +322,12 @@
 
       // Collapse empty media wrappers so the post shrinks vertically.
       // CSS handles hiding the media elements themselves (img, video, etc.)
-      // via .ai-detector-shaded selectors — resilient to lazy loading.
+      // via .ai-detector-red selectors — resilient to lazy loading.
       // JS just needs to collapse the now-empty wrapper divs.
-      collapseEmptyContainers(boundary);
+      // Only collapse for red (2+ anchors); yellow posts keep their media.
+      if (level === "red") {
+        collapseEmptyContainers(boundary);
+      }
 
       // Build tooltip content
       const labels = [...anchors];
