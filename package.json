@@ -1,0 +1,15 @@
+{
+  "name": "linkedin-ai-detector",
+  "version": "1.0.0",
+  "description": "A Chrome extension that detects AI-generated posts in your LinkedIn feed using client-side pattern matching. No data leaves your browser.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

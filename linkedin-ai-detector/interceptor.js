@@ -134,48 +134,23 @@
     }, "*");
   }
 
-  // ─── Override fetch ─────────────────────────────────────────────────────
+  // ─── Intercept Response.prototype.json() ─────────────────────────────────
+  // Instead of overriding fetch (which conflicts with LinkedIn's own interceptor),
+  // we intercept the response reading. When any code calls response.json(),
+  // we peek at the data if it came from a feed URL.
 
-  const originalFetch = window.fetch;
-  window.fetch = async function (...args) {
-    const response = await originalFetch.apply(this, args);
+  const originalJson = Response.prototype.json;
+  Response.prototype.json = async function () {
+    const data = await originalJson.call(this);
 
     try {
-      const url = typeof args[0] === "string" ? args[0] : args[0]?.url || "";
-      if (matchesFeedUrl(url)) {
-        // Clone response so the original consumer isn't affected
-        const clone = response.clone();
-        clone.json().then((data) => {
-          const posts = extractPosts(data);
-          if (posts.length > 0) sendPosts(posts);
-        }).catch(() => {});
+      if (this.url && matchesFeedUrl(this.url)) {
+        const posts = extractPosts(data);
+        if (posts.length > 0) sendPosts(posts);
       }
     } catch (e) {}
 
-    return response;
-  };
-
-  // ─── Override XMLHttpRequest ────────────────────────────────────────────
-
-  const originalXHROpen = XMLHttpRequest.prototype.open;
-  const originalXHRSend = XMLHttpRequest.prototype.send;
-
-  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
-    this.__aiDetectorUrl = url;
-    return originalXHROpen.call(this, method, url, ...rest);
-  };
-
-  XMLHttpRequest.prototype.send = function (...args) {
-    if (this.__aiDetectorUrl && matchesFeedUrl(this.__aiDetectorUrl)) {
-      this.addEventListener("load", function () {
-        try {
-          const data = JSON.parse(this.responseText);
-          const posts = extractPosts(data);
-          if (posts.length > 0) sendPosts(posts);
-        } catch (e) {}
-      });
-    }
-    return originalXHRSend.apply(this, args);
+    return data;
   };
 
 })();
