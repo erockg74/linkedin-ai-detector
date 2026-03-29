@@ -15,6 +15,15 @@
 (function () {
   "use strict";
 
+  // ─── Skip non-feed pages (profiles, messaging, etc.) ────────────────
+  // Only run on the main feed and search results where posts appear.
+  function isFeedPage() {
+    const path = location.pathname;
+    return path === "/" || path === "/feed/" || path === "/feed"
+      || path.startsWith("/search/") || path.startsWith("/posts/");
+  }
+  if (!isFeedPage()) return;
+
   const PROCESSED_ATTR = "data-ai-detector-processed";
   const RESCAN_INTERVAL = 3000;
   let enabled = true;
@@ -259,6 +268,7 @@
 
   function scanPage() {
     if (!enabled) return;
+    if (!isFeedPage()) return; // SPA navigation guard
 
     // Phase 1: Find all substantial text elements on the page
     const textEls = document.querySelectorAll('p, span[dir="ltr"]');
