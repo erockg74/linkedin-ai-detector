@@ -19,16 +19,16 @@
 /* Hide all media inside flagged posts. !important overrides LinkedIn.  */
 /* Also catches background-image wrappers via the .ai-detector-media-kill class. */
 
-.ai-detector-shaded img:not(.ai-detector-dot *),
-.ai-detector-shaded video:not(.ai-detector-dot *),
-.ai-detector-shaded iframe:not(.ai-detector-dot *),
-.ai-detector-shaded canvas:not(.ai-detector-dot *),
-.ai-detector-shaded svg:not(.ai-detector-dot *),
-.ai-detector-shaded audio:not(.ai-detector-dot *),
-.ai-detector-shaded embed:not(.ai-detector-dot *),
-.ai-detector-shaded object:not(.ai-detector-dot *),
-.ai-detector-shaded [data-video]:not(.ai-detector-dot *),
-.ai-detector-shaded .video-js:not(.ai-detector-dot *) {
+.ai-detector-red img:not(.ai-detector-dot *),
+.ai-detector-red video:not(.ai-detector-dot *),
+.ai-detector-red iframe:not(.ai-detector-dot *),
+.ai-detector-red canvas:not(.ai-detector-dot *),
+.ai-detector-red svg:not(.ai-detector-dot *),
+.ai-detector-red audio:not(.ai-detector-dot *),
+.ai-detector-red embed:not(.ai-detector-dot *),
+.ai-detector-red object:not(.ai-detector-dot *),
+.ai-detector-red [data-video]:not(.ai-detector-dot *),
+.ai-detector-red .video-js:not(.ai-detector-dot *) {
   display: none !important;
   height: 0 !important;
   max-height: 0 !important;
