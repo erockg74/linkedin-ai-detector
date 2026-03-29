@@ -15,14 +15,15 @@
 (function () {
   "use strict";
 
-  // ─── Skip non-feed pages (profiles, messaging, etc.) ────────────────
-  // Only run on the main feed and search results where posts appear.
+  // ─── Feed-page guard (checked every scan cycle) ─────────────────────
+  // Only scan on the main feed and search results where posts appear.
+  // Profiles, messaging, etc. are skipped but the script stays alive
+  // so it activates if LinkedIn's SPA navigates back to the feed.
   function isFeedPage() {
     const path = location.pathname;
     return path === "/" || path === "/feed/" || path === "/feed"
       || path.startsWith("/search/") || path.startsWith("/posts/");
   }
-  if (!isFeedPage()) return;
 
   const PROCESSED_ATTR = "data-ai-detector-processed";
   const RESCAN_INTERVAL = 3000;
@@ -401,11 +402,4 @@
         // Re-check for recycled DOM elements that lost their shading
         document.querySelectorAll(`[${PROCESSED_ATTR}]`).forEach((el) => {
           if (!el.querySelector(".ai-detector-dot")) {
-            el.removeAttribute(PROCESSED_ATTR);
-          }
-        });
-        scanPage();
-      }, RESCAN_INTERVAL);
-    }
-  }
-})();
+            el.r
