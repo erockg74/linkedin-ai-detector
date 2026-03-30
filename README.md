@@ -4,9 +4,11 @@ A Chrome extension that scores LinkedIn posts for AI-generated content using Cla
 
 ## How it works
 
-The extension finds posts in your LinkedIn feed, extracts their text, and sends each one to Claude Haiku for scoring. Every post gets an AI confidence score (0–100%) displayed as a badge inline with the post. Posts above your chosen threshold are collapsed — you still see who posted it, but the content and action buttons are hidden behind a gray overlay. Click the toggle arrow to expand any collapsed post.
+The extension finds posts in your LinkedIn feed, extracts their text, and sends each one to Claude Haiku for scoring. Every post gets an AI confidence score displayed as a unified pill badge (e.g. "AI 72%") inline with the post controls. The pill is color-coded: red for high scores, amber for mid-range, and green for low. Posts above your chosen threshold are collapsed — you still see who posted it, but the content and action buttons are hidden behind a gray overlay. Click the toggle arrow inside the pill to expand any collapsed post.
 
-Hover over any score badge to see a short explanation of why the post was flagged.
+Posts with too little text to assess (image-only, emoji-only, etc.) get a dimmed "AI –" pill so you know the extension saw them but couldn't score them. Hover over that pill to see "Not enough text to assess."
+
+Hover over any scored pill to see a short explanation of why the post was flagged.
 
 ## Installation
 
@@ -32,10 +34,10 @@ The slider lets you dial in anywhere between aggressive and permissive. Changes 
 
 The extension uses an anchor-first DOM discovery approach. Instead of relying on LinkedIn's CSS classes, data attributes, or ARIA roles (which change frequently), it finds posts using two stable visual anchors:
 
-1. **"… more" button** — the truncated-post expand button. Its parent contains the post text.
-2. **⋯ + ✕ dismiss pair** — two adjacent icon-only buttons near the top of every post card. Walking up from "… more" to the first ancestor containing this pair gives the post boundary.
+1. **⋯ + ✕ dismiss pair** (primary anchor) — two adjacent icon-only buttons near the top of every post card. Every post has exactly one pair, and they never nest. Walking up from the pair until the parent contains other pairs gives the post boundary — a 1:1 mapping with no dedup needed.
+2. **"… more" button** (secondary anchor) — the truncated-post expand button. When present, its parent contains clean post text. When absent, text is extracted from content sections between the header and actions bar.
 
-This makes the extension resilient to LinkedIn's frequent DOM restructuring. Additional hardening includes adaptive layout detection (dual-anchor section splitting instead of fixed child counts), fallback author detection (link + avatar image pattern if `/in/` URLs change), and self-healing diagnostics that log a console warning when detection stops working.
+This makes the extension resilient to LinkedIn's frequent DOM restructuring. Additional hardening includes an invisible-wrapper fix (walks down through zero-height single-child containers), adaptive content section detection, noise filtering (strips author sections, engagement stats, and inline comments), and self-healing diagnostics that log a console warning after three consecutive zero-result scans.
 
 ## Files
 
