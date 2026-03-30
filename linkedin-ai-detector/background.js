@@ -1,5 +1,6 @@
-// LinkedIn AI Post Detector v2 — Service Worker (background.js)
-// Receives intercepted feed data from content script, scores via Haiku, stores results.
+// LinkedIn AI Post Detector v2.1 — Service Worker (background.js)
+// Receives posts from content script (DOM-detected), scores via Haiku, stores results.
+// postKey can be a URN (urn:li:activity:...) or a text hash (txh:...).
 
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
 const HAIKU_MAX_TOKENS = 100;
@@ -37,9 +38,9 @@ chrome.storage.local.get(["aiDetectorStats"], (res) => {
 
 // ─── Haiku API call ──────────────────────────────────────────────────────
 
-async function scorePost(postText, activityUrn, apiKey) {
-  if (pendingScores.has(activityUrn) || scoreCache.has(activityUrn)) return;
-  pendingScores.add(activityUrn);
+async function scorePost(postText, postKey, apiKey) {
+  if (pendingScores.has(postKey) || scoreCache.has(postKey)) return;
+  pendingScores.add(postKey);
 
   try {
     const prompt = SCORING_PROMPT.replace("{post_text}", postText);
@@ -77,12 +78,13 @@ async function scorePost(postText, activityUrn, apiKey) {
     const score = Math.max(0, Math.min(100, parseInt(result.score, 10)));
     const reason = result.reason || "";
 
-    const scoreData = { score, reason, activityUrn, timestamp: Date.now() };
-    scoreCache.set(activityUrn, scoreData);
+    const scoreData = { score, reason, postKey, timestamp: Date.now() };
+    scoreCache.set(postKey, scoreData);
 
     // Persist to session storage
+    const storageKey = `score_${postKey}`;
     const storageUpdate = {};
-    storageUpdate[`score_${activityUrn}`] = scoreData;
+    storageUpdate[storageKey] = scoreData;
     chrome.storage.session.set(storageUpdate);
 
     // Update stats
@@ -98,7 +100,7 @@ async function scorePost(postText, activityUrn, apiKey) {
       try {
         chrome.tabs.sendMessage(tab.id, {
           type: "SCORE_READY",
-          activityUrn,
+          postKey,
           score,
           reason
         });
@@ -107,10 +109,10 @@ async function scorePost(postText, activityUrn, apiKey) {
       }
     }
   } catch (e) {
-    console.warn(`[AI Detector] Scoring failed for ${activityUrn}:`, e);
+    console.warn(`[AI Detector] Scoring failed for ${postKey}:`, e);
     // Fail open — leave post visible
   } finally {
-    pendingScores.delete(activityUrn);
+    pendingScores.delete(postKey);
   }
 }
 
@@ -118,19 +120,17 @@ async function scorePost(postText, activityUrn, apiKey) {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === "FEED_POSTS") {
-    // Received extracted posts from content script (via interceptor)
     handleFeedPosts(msg.posts);
     sendResponse({ ok: true });
   }
 
   if (msg.type === "GET_ALL_SCORES") {
-    // Content script requesting all cached scores
     const allScores = {};
-    for (const [urn, data] of scoreCache) {
-      allScores[urn] = data;
+    for (const [key, data] of scoreCache) {
+      allScores[key] = data;
     }
     sendResponse({ scores: allScores });
-    return true; // keep channel open for async
+    return true;
   }
 
   if (msg.type === "GET_STATS") {
@@ -152,7 +152,6 @@ async function handleFeedPosts(posts) {
   const apiKey = settings.aiDetectorApiKey;
 
   if (!apiKey) {
-    // Notify user to set API key (once per session)
     if (!handleFeedPosts._notified) {
       handleFeedPosts._notified = true;
       const tabs = await chrome.tabs.query({ url: "*://*.linkedin.com/*", active: true });
@@ -166,46 +165,19 @@ async function handleFeedPosts(posts) {
   }
 
   for (const post of posts) {
-    if (!post.activityUrn || !post.text) continue;
+    if (!post.postKey || !post.text) continue;
     if (post.text.trim().length < 20) continue;
-    // Don't re-score
-    if (scoreCache.has(post.activityUrn)) continue;
-    scorePost(post.text, post.activityUrn, apiKey);
+    if (scoreCache.has(post.postKey)) continue;
+    await scorePost(post.text, post.postKey, apiKey);
   }
-}
-
-// ─── Inject interceptor into LinkedIn tabs ───────────────────────────────
-
-// Inject on navigation
-chrome.webNavigation?.onCommitted?.addListener((details) => {
-  if (details.frameId !== 0) return;
-  if (!details.url.includes("linkedin.com")) return;
-  injectInterceptor(details.tabId);
-});
-
-// Also inject on tab update (for SPA navigations)
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === "loading" && tab.url?.includes("linkedin.com")) {
-    injectInterceptor(tabId);
-  }
-});
-
-function injectInterceptor(tabId) {
-  chrome.scripting.executeScript({
-    target: { tabId },
-    world: "MAIN",
-    files: ["interceptor.js"]
-  }).catch(() => {
-    // May fail if tab isn't ready yet, that's ok
-  });
 }
 
 // ─── Restore scores from session storage on startup ──────────────────────
 
 chrome.storage.session.get(null, (items) => {
   for (const [key, value] of Object.entries(items)) {
-    if (key.startsWith("score_") && value.activityUrn) {
-      scoreCache.set(value.activityUrn, value);
+    if (key.startsWith("score_") && value.postKey) {
+      scoreCache.set(value.postKey, value);
     }
   }
 });

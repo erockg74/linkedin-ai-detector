@@ -96,23 +96,114 @@
       color: #22c55e;
     }
 
+    .btn-test {
+      padding: 6px 12px;
+      background: #333;
+      color: #e0e0e0;
+      border: 1px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: background 0.15s;
+    }
+
+    .btn-test:hover {
+      background: #444;
+      color: #fff;
+    }
+
+    .btn-test.testing {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .btn-test.pass {
+      background: #166534;
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+
+    .btn-test.fail {
+      background: #7f1d1d;
+      border-color: #f87171;
+      color: #f87171;
+    }
+
     .api-status {
       font-size: 11px;
       margin-top: 4px;
-      height: 14px;
+      min-height: 14px;
     }
 
     .api-status.ok { color: #22c55e; }
     .api-status.missing { color: #f87171; }
+    .api-status.testing { color: #fbbf24; }
 
-    /* Threshold slider */
+    /* Sensitivity presets */
+    .preset-wrap {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+
+    .preset-btn {
+      flex: 1;
+      padding: 7px 0;
+      background: #2a2a2a;
+      color: #999;
+      border: 1px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      text-align: center;
+      transition: all 0.15s;
+    }
+
+    .preset-btn:hover {
+      background: #333;
+      color: #ccc;
+    }
+
+    .preset-btn.active {
+      border-color: #666;
+      color: #fff;
+      background: #333;
+    }
+
+    .preset-btn.active.aggressive {
+      border-color: #f87171;
+      color: #f87171;
+    }
+
+    .preset-btn.active.permissive {
+      border-color: #22c55e;
+      color: #22c55e;
+    }
+
+    .preset-btn.active.off {
+      border-color: #94a3b8;
+      color: #94a3b8;
+    }
+
+    /* Slider — no value label, just the track */
     .slider-wrap {
       display: flex;
       align-items: center;
-      gap: 10px;
+      gap: 0;
     }
 
-    .threshold-slider {
+    .slider-label {
+      font-size: 10px;
+      color: #666;
+      white-space: nowrap;
+      user-select: none;
+    }
+
+    .slider-label.left { margin-right: 8px; }
+    .slider-label.right { margin-left: 8px; }
+
+    .sensitivity-slider {
       flex: 1;
       -webkit-appearance: none;
       appearance: none;
@@ -122,7 +213,7 @@
       outline: none;
     }
 
-    .threshold-slider::-webkit-slider-thumb {
+    .sensitivity-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
       width: 16px;
@@ -134,22 +225,24 @@
       transition: background 0.15s;
     }
 
-    .threshold-slider::-webkit-slider-thumb:hover {
+    .sensitivity-slider::-webkit-slider-thumb:hover {
       background: #fff;
     }
 
-    .threshold-value {
-      font-weight: 700;
-      color: #fff;
-      font-size: 14px;
-      min-width: 36px;
-      text-align: right;
+    .sensitivity-slider:disabled {
+      opacity: 0.3;
+      cursor: default;
     }
 
-    .threshold-desc {
+    .sensitivity-slider:disabled::-webkit-slider-thumb {
+      cursor: default;
+    }
+
+    .sensitivity-desc {
       font-size: 11px;
       color: #777;
-      margin-top: 4px;
+      margin-top: 6px;
+      text-align: center;
     }
 
     /* Stats */
@@ -192,24 +285,31 @@
 </head>
 <body>
   <h1>AI Post Detector</h1>
-  <div class="version">v2.0 — Claude Haiku scoring</div>
+  <div class="version">v2.4 — Claude Haiku scoring</div>
 
   <div class="section">
     <label for="apiKey">Anthropic API Key</label>
     <div class="api-key-wrap">
       <input type="password" id="apiKey" class="api-key-input" placeholder="sk-ant-..." spellcheck="false" autocomplete="off">
       <button class="btn-save" id="saveKey">Save</button>
+      <button class="btn-test" id="testKey">Test</button>
     </div>
     <div class="api-status" id="apiStatus"></div>
   </div>
 
   <div class="section">
-    <label for="threshold">Collapse posts scoring above:</label>
-    <div class="slider-wrap">
-      <input type="range" id="threshold" class="threshold-slider" min="0" max="100" value="70">
-      <span class="threshold-value" id="thresholdValue">70%</span>
+    <label>Filter Strength</label>
+    <div class="preset-wrap">
+      <button class="preset-btn aggressive" id="presetAggressive">Aggressive</button>
+      <button class="preset-btn permissive" id="presetPermissive">Permissive</button>
+      <button class="preset-btn off" id="presetOff">Off</button>
     </div>
-    <div class="threshold-desc">Lower = more aggressive filtering</div>
+    <div class="slider-wrap">
+      <span class="slider-label left">More filtering</span>
+      <input type="range" id="sensitivity" class="sensitivity-slider" min="10" max="90" value="30">
+      <span class="slider-label right">Less filtering</span>
+    </div>
+    <div class="sensitivity-desc" id="sensitivityDesc">Scores shown on all posts</div>
   </div>
 
   <div class="section">
