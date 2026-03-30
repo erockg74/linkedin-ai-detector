@@ -1,19 +1,12 @@
 # LinkedIn AI Post Detector
 
-A Chrome extension that detects AI-generated posts in your LinkedIn feed using client-side pattern matching. No data leaves your browser.
+A Chrome extension that scores LinkedIn posts for AI-generated content using Claude Haiku. Bring your own Anthropic API key.
 
 ## How it works
 
-The extension scans post text for four AI "anchors" — patterns that are strong indicators of AI-generated content:
+The extension finds posts in your LinkedIn feed, extracts their text, and sends each one to Claude Haiku for scoring. Every post gets an AI confidence score (0–100%) displayed as a badge inline with the post. Posts above your chosen threshold are collapsed — you still see who posted it, but the content and action buttons are hidden behind a gray overlay. Click the toggle arrow to expand any collapsed post.
 
-1. **Em-dash (—)** — Real people almost never type em-dashes. LLMs use them constantly.
-2. **Non-human emoji** — Faces, hands, and hearts are natural. Everything else (🔥, ✅, 💡, 🚀, ➡️, 📈) requires digging through emoji menus that real people skip.
-3. **Single-sentence paragraphs** — The AI cadence of one punchy line per paragraph, 6+ lines in a row. Humans mix in multi-sentence paragraphs naturally.
-4. **Hook + bullet list + CTA** — Short opening line, then a bulleted/numbered list, ending with "Agree? Thoughts? Follow me!" The LinkedIn AI playbook.
-
-When a post triggers one anchor, it gets a **yellow** shading. Two or more anchors trigger **red** shading. Images and videos in flagged posts are collapsed so you can scroll past faster.
-
-Posts with zero anchors are left completely untouched.
+Hover over any score badge to see a short explanation of why the post was flagged.
 
 ## Installation
 
@@ -22,38 +15,48 @@ Posts with zero anchors are left completely untouched.
 3. Enable **Developer mode** (top right)
 4. Click **Load unpacked**
 5. Select the `linkedin-ai-detector` folder (the one containing `manifest.json`)
-6. Navigate to LinkedIn — the extension runs automatically
+6. Click the extension icon and enter your Anthropic API key
+7. Navigate to LinkedIn — scoring starts automatically
 
-## Usage
+## Controls
 
-- Scroll your LinkedIn feed normally. Flagged posts will be shaded yellow or red.
-- Hover over the small dot at the top of a flagged post to see which anchors triggered.
-- Click the extension icon in your toolbar to toggle it on/off or view stats.
+The popup gives you three filter presets plus a fine-tuning slider:
 
-## Philosophy
+- **Aggressive** — collapses most AI-suspected posts (threshold 30)
+- **Permissive** — only collapses obvious AI posts (threshold 70)
+- **Off** — scores are still shown on every post, but nothing is collapsed
 
-Rather than using dozens of fuzzy heuristics with a scoring system, this extension uses a small number of high-confidence signals. Each anchor represents something a human almost never does when writing organically on LinkedIn. The goal is precision over coverage — it's better to miss some AI posts than to falsely flag human ones.
+The slider lets you dial in anywhere between aggressive and permissive. Changes take effect after a 2-second debounce — no API re-calls, just re-evaluation of cached scores.
 
-## Privacy
+## Architecture
 
-Everything runs locally in your browser. The extension:
+The extension uses an anchor-first DOM discovery approach. Instead of relying on LinkedIn's CSS classes, data attributes, or ARIA roles (which change frequently), it finds posts using two stable visual anchors:
 
-- Makes **zero** network requests
-- Sends **no data** to any server
-- Uses only `chrome.storage.local` for your on/off preference and scan stats
-- Requires only `activeTab` and `storage` permissions
+1. **"… more" button** — the truncated-post expand button. Its parent contains the post text.
+2. **⋯ + ✕ dismiss pair** — two adjacent icon-only buttons near the top of every post card. Walking up from "… more" to the first ancestor containing this pair gives the post boundary.
+
+This makes the extension resilient to LinkedIn's frequent DOM restructuring. Additional hardening includes adaptive layout detection (dual-anchor section splitting instead of fixed child counts), fallback author detection (link + avatar image pattern if `/in/` URLs change), and self-healing diagnostics that log a console warning when detection stops working.
 
 ## Files
 
 ```
 linkedin-ai-detector/
   manifest.json    — Chrome extension manifest (MV3)
-  content.js       — Detection logic and DOM manipulation
-  styles.css       — Shading, dot, and tooltip styles
-  popup.html       — Extension popup UI
-  popup.js         — Popup toggle and stats logic
+  content.js       — Anchor-first post detection, scoring UI, collapse/expand
+  background.js    — Claude Haiku API calls, score caching via chrome.storage.session
+  styles.css       — Badge, tooltip, collapse overlay, and notification styles
+  popup.html       — Extension popup with API key input and filter controls
+  popup.js         — Preset buttons, slider logic, stats display
   icons/           — Extension icons (16, 48, 128px)
 ```
+
+## Privacy
+
+Post text is sent to the Anthropic API for scoring using your own API key. No data is sent anywhere else. Scores are cached in your browser's session storage so posts aren't re-scored on page navigation.
+
+## Cost
+
+Each post costs roughly one Claude Haiku API call. At current pricing this is fractions of a cent per post. Posts are scored sequentially to avoid rate limiting, and scores are cached for the browser session.
 
 ## License
 
