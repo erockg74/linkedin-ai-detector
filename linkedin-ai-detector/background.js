@@ -21,7 +21,9 @@ Post text:
 """
 
 Respond with JSON only: {"score": 0-100, "reason": "one sentence"}
-Score 0 = definitely human, 100 = definitely AI.`;
+Score 0 = definitely human, 100 = definitely AI.
+IMPORTANT: Only use score -1 for text that is clearly NOT a user-authored post — for example, a standalone ad unit, job listing card, or LinkedIn UI element with zero user-written content. Posts that share articles, link to news stories, or include quoted material ARE still user posts — score them normally based on whatever commentary or framing the author added. When in doubt, score it.
+If the text is genuinely not a post, respond with: {"score": -1, "reason": "Not a post"}`;
 
 // Track posts currently being scored to avoid duplicates
 const pendingScores = new Set();
@@ -75,7 +77,9 @@ async function scorePost(postText, postKey, apiKey) {
     }
 
     const result = JSON.parse(cleaned);
-    const score = Math.max(0, Math.min(100, parseInt(result.score, 10)));
+    const rawScore = parseInt(result.score, 10);
+    // -1 = "not a post" → pass through as-is; otherwise clamp 0–100
+    const score = rawScore === -1 ? -1 : Math.max(0, Math.min(100, rawScore));
     const reason = result.reason || "";
 
     const scoreData = { score, reason, postKey, timestamp: Date.now() };
@@ -97,16 +101,14 @@ async function scorePost(postText, postKey, apiKey) {
     // Broadcast score to all LinkedIn tabs
     const tabs = await chrome.tabs.query({ url: "*://*.linkedin.com/*" });
     for (const tab of tabs) {
-      try {
-        chrome.tabs.sendMessage(tab.id, {
-          type: "SCORE_READY",
-          postKey,
-          score,
-          reason
-        });
-      } catch (e) {
-        // Tab might not have content script yet
-      }
+      chrome.tabs.sendMessage(tab.id, {
+        type: "SCORE_READY",
+        postKey,
+        score,
+        reason
+      }).catch(() => {
+        // Tab might not have content script yet — safe to ignore
+      });
     }
   } catch (e) {
     console.warn(`[AI Detector] Scoring failed for ${postKey}:`, e);
@@ -156,9 +158,7 @@ async function handleFeedPosts(posts) {
       handleFeedPosts._notified = true;
       const tabs = await chrome.tabs.query({ url: "*://*.linkedin.com/*", active: true });
       for (const tab of tabs) {
-        try {
-          chrome.tabs.sendMessage(tab.id, { type: "NEED_API_KEY" });
-        } catch (e) {}
+        chrome.tabs.sendMessage(tab.id, { type: "NEED_API_KEY" }).catch(() => {});
       }
     }
     return;

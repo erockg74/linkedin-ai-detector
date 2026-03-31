@@ -4,11 +4,15 @@ A Chrome extension that scores LinkedIn posts for AI-generated content using Cla
 
 ## How it works
 
-The extension finds posts in your LinkedIn feed, extracts their text, and sends each one to Claude Haiku for scoring. Every post gets an AI confidence score displayed as a unified pill badge (e.g. "AI 72%") inline with the post controls. The pill is color-coded: red for high scores, amber for mid-range, and green for low. Posts above your chosen threshold are collapsed — you still see who posted it, but the content and action buttons are hidden behind a gray overlay. Click the toggle arrow inside the pill to expand any collapsed post.
+The extension finds posts in your LinkedIn feed and activity pages, extracts their text, and sends each one to Claude Haiku for scoring. Every post gets an AI confidence score (0–100%) displayed as a color-coded pill badge inline with the post header. While a score is being fetched, a pulsing spinner pill is shown. Posts above your chosen threshold are collapsed on the main feed — you still see who posted it, but the content and action buttons are hidden behind a gray overlay. Click the toggle arrow to expand any collapsed post.
 
-Posts with too little text to assess (image-only, emoji-only, etc.) get a dimmed "AI –" pill so you know the extension saw them but couldn't score them. Hover over that pill to see "Not enough text to assess."
+Hover over any score badge to see a short explanation of why the post was flagged.
 
-Hover over any scored pill to see a short explanation of why the post was flagged.
+### Badge states
+
+- **Spinner pill** (amber) — scoring in progress
+- **Score pill** (green/amber/red) — scored, with color indicating AI likelihood
+- **Grey pill** — not enough text to assess, or non-post content (ads, job listings)
 
 ## Installation
 
@@ -32,12 +36,20 @@ The slider lets you dial in anywhere between aggressive and permissive. Changes 
 
 ## Architecture
 
-The extension uses an anchor-first DOM discovery approach. Instead of relying on LinkedIn's CSS classes, data attributes, or ARIA roles (which change frequently), it finds posts using two stable visual anchors:
+The extension uses an anchor-first DOM discovery approach. Instead of relying on LinkedIn's CSS classes, data attributes, or ARIA roles (which change frequently), it finds posts using stable visual anchors:
 
-1. **⋯ + ✕ dismiss pair** (primary anchor) — two adjacent icon-only buttons near the top of every post card. Every post has exactly one pair, and they never nest. Walking up from the pair until the parent contains other pairs gives the post boundary — a 1:1 mapping with no dedup needed.
-2. **"… more" button** (secondary anchor) — the truncated-post expand button. When present, its parent contains clean post text. When absent, text is extracted from content sections between the header and actions bar.
+**Feed pages** (`/`, `/feed`, `/search/*`, `/posts/*`):
 
-This makes the extension resilient to LinkedIn's frequent DOM restructuring. Additional hardening includes an invisible-wrapper fix (walks down through zero-height single-child containers), adaptive content section detection, noise filtering (strips author sections, engagement stats, and inline comments), and self-healing diagnostics that log a console warning after three consecutive zero-result scans.
+1. **⋯ + ✕ dismiss pair** — two adjacent icon-only buttons near the top of every post card. Walking up from the pair to the first ancestor containing other pairs gives the post boundary.
+2. **"… more" button** — the truncated-post expand button. Its parent contains clean post text.
+3. **Direct text fallback** — when LinkedIn uses obfuscated class names, the extension extracts `innerText` directly from the post boundary with noise filtering.
+
+**Activity pages** (`/in/*/recent-activity/*`):
+
+1. **`data-urn` elements** — each `div[data-urn*="activity"]` is the post card directly (no boundary walking needed).
+2. **Control menu button** — the single ⋯ button anchors badge placement via a synthesized "virtual pair."
+
+SPA navigation is detected via `history.pushState`/`replaceState` interception, `popstate`, and `visibilitychange` listeners with triple-scan on navigation. Self-healing diagnostics log a console warning when detection stops working, and pending posts auto-retry if the service worker connection is lost.
 
 ## Files
 
