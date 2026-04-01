@@ -64,6 +64,10 @@ linkedin-ai-detector/
   icons/           — Extension icons (16, 48, 128px)
 ```
 
+## Debug highlight mode
+
+Alt+click any score badge to toggle debug highlights. Every post on the page will get a yellow overlay showing exactly which text was extracted and sent to Haiku for scoring. Alt+click again to turn it off. Highlights persist through "… more" expansions thanks to the MutationObserver.
+
 ## Privacy
 
 Post text is sent to the Anthropic API for scoring using your own API key. No data is sent anywhere else. Scores are cached in your browser's session storage so posts aren't re-scored on page navigation.
