@@ -1,31 +1,46 @@
-// LinkedIn AI Post Detector v2.5 — Content Script
-// Anchor-first approach: the ⋯ + ✕ dismiss button pair is the PRIMARY anchor.
-//   1. ⋯ + ✕ dismiss pair → exists on EVERY post card, never nests.
+// LinkedIn AI Post Detector v2.9 — Content Script
+// Anchor-first approach with two page modes:
+//
+// FEED pages (/, /feed, /search/*, /posts/*):
+//   1. ⋯ + ✕ dismiss pair → PRIMARY anchor. Exists on EVERY feed post.
 //      Walk UP from the pair until the parent contains other pairs.
-//      That ancestor is the post boundary (1:1 mapping, no dedup needed).
 //   2. "… more" button → SECONDARY anchor for clean text extraction.
-//      When present, use its parent for post text. When absent, extract
-//      text from content sections between header and actions bar.
-// No convergence, no depth counting, no role/class selectors.
+//
+// ACTIVITY pages (/in/*/recent-activity/*):
+//   1. data-urn elements → each div[data-urn*="activity"] IS the post card.
+//      No boundary walking needed (1:1 mapping by definition).
+//   2. Control menu button (⋯ only, no ✕) → anchor for badge placement.
+//      A "virtual pair" is synthesized so badge injection code is shared.
+//   3. "… more" button → same secondary anchor for text extraction.
 
 (function () {
   "use strict";
 
-  // ─── Feed-page guard ──────────────────────────────────────────────────
+  // ─── Page-type guards ────────────────────────────────────────────────
   function isFeedPage() {
     const path = location.pathname;
     return path === "/" || path === "/feed/" || path === "/feed"
       || path.startsWith("/search/") || path.startsWith("/posts/");
   }
 
+  function isActivityPage() {
+    return /^\/in\/[^/]+\/recent-activity\b/.test(location.pathname);
+  }
+
+  function isSupportedPage() {
+    return isFeedPage() || isActivityPage();
+  }
+
   // ─── State ─────────────────────────────────────────────────────────────
   const PROCESSED_ATTR = "data-ai-detector-v2";
-  const MORE_TEXT = "\u2026 more";   // "… more" — the visible button text
+  const MORE_TEXT = "\u2026 more";    // "… more" — feed variant
+  const MORE_TEXT_ALT = "\u2026more"; // "…more"  — activity page variant
   let threshold = 70;
   let scores = {};           // postKey → { score, reason }
   let apiKeyNotified = false;
   let zeroResultCount = 0;        // consecutive scans with zero posts found
   let diagnosticNotified = false;  // only warn once per page load
+  let debugHighlight = false;      // toggle: highlight extracted text
 
   function contextValid() {
     try { return !!chrome.runtime?.id; } catch { return false; }
@@ -121,11 +136,92 @@
     return node;
   }
 
+  // ─── ACTIVITY PAGE: synthesise a virtual pair from the control menu ───
+  // On activity pages the ⋯ + ✕ dismiss pair doesn't exist. Instead each
+  // post has a single "Open control menu" button inside a dropdown.
+  // We build a pair-like object so injectBadge / extractPostText reuse
+  // the same code paths as the feed.
+  //
+  // Structure on activity page:
+  //   div.relative
+  //     div.display-flex (author info)
+  //     div.feed-shared-control-menu        ← controlRow (badge goes here)
+  //       div.artdeco-dropdown              ← dotsBtn (badge inserted before this)
+  //         button[aria-label*="Open control menu"]
+  //
+  // This mirrors the feed layout where the badge sits inside the control
+  // row, immediately before the ⋯ button element.
+
+  function findActivityVirtualPair(postEl) {
+    const menuContainer = postEl.querySelector(".feed-shared-control-menu");
+    if (!menuContainer) return null;
+
+    const dropdown = menuContainer.querySelector(".artdeco-dropdown");
+    if (!dropdown) return null;
+
+    const triggerBtn = dropdown.querySelector(
+      'button[aria-label*="Open control menu"]'
+    );
+
+    return {
+      dotsBtn: dropdown,        // badge is inserted before this element
+      dismissBtn: null,         // doesn't exist on activity pages
+      controlRow: menuContainer, // the container holding the dropdown
+      _activityTrigger: triggerBtn  // the actual ⋯ button (for future use)
+    };
+  }
+
+  // ─── ACTIVITY PAGE: find all unprocessed posts ─────────────────────
+  function findActivityPosts() {
+    const postEls = document.querySelectorAll('[data-urn*="urn:li:activity"]');
+    const results = [];
+
+    for (const postEl of postEls) {
+      const existingState = postEl.getAttribute(PROCESSED_ATTR);
+      if (existingState && existingState !== "unscored") {
+        if (existingState === "pending") {
+          const sentAt = parseInt(postEl.getAttribute("data-ai-pending-ts") || "0", 10);
+          if (Date.now() - sentAt < 5000) continue;
+        } else {
+          continue;
+        }
+      }
+
+      const pair = findActivityVirtualPair(postEl);
+      if (!pair) continue;
+
+      const text = extractPostText(postEl, pair);
+      if (text.length < 20) {
+        if (!existingState) {
+          injectUnscoredBadge(postEl, pair);
+          postEl.setAttribute(PROCESSED_ATTR, "unscored");
+        }
+        continue;
+      }
+
+      // If previously unscored but now has text, remove old badge
+      if (existingState === "unscored") {
+        const oldBadge = postEl.querySelector(".ai-detector-badge");
+        if (oldBadge) oldBadge.remove();
+      }
+
+      // URN comes directly from the data-urn attribute
+      const urn = postEl.getAttribute("data-urn");
+      const postKey = urn || hashText(text);
+      const author = getAuthor(postEl);
+
+      results.push({ boundary: postEl, pair, postKey, text, author });
+    }
+
+    return results;
+  }
+
   // ─── SECONDARY ANCHOR: find "… more" button inside a post card ────────
   // When present, its parent element contains the clean post text.
   function findMoreButton(card) {
     for (const btn of card.querySelectorAll("button")) {
-      if (btn.textContent.trim() === MORE_TEXT) return btn;
+      const t = btn.textContent.trim();
+      if (t === MORE_TEXT || t === MORE_TEXT_ALT) return btn;
     }
     return null;
   }
@@ -166,12 +262,140 @@
     return false;
   }
 
+  // ─── Nested post detection ──────────────────────────────────────────
+  // When someone "likes this", "commented on this", "celebrates this",
+  // etc., LinkedIn wraps the original post inside the outer card.
+  // Structure (at depth ~2 inside the boundary):
+  //   [0] H2  "Feed post"
+  //   [1] DIV "Person X likes/commented/celebrates this" + ⋯/✕ buttons
+  //   [2] HR  role="presentation"     ← separator
+  //   [3] DIV inner author (person or company)
+  //   [4] P   inner post text (with optional "… more")
+  //   ...
+  // We detect this by finding <hr role="presentation"> whose previous
+  // sibling contains social-context text. When found, we return the
+  // parent element scoped to just the children AFTER the HR — i.e., the
+  // inner post only. This is a semantic HTML element that LinkedIn uses
+  // for accessibility and is unlikely to change.
+
+  const SOCIAL_CONTEXT_RE = /\b(likes? this|commented on this|celebrates? this|reposted|loves? this|finds? this|supports? this|is curious about this)\b/i;
+
+  /**
+   * For a nested/reshared post, returns a "virtual card" element that
+   * contains only the inner post content (after the HR separator).
+   * Returns null if this is a regular (non-nested) post.
+   */
+  function findInnerPostScope(card) {
+    // Walk down through single-child wrappers to reach the structural split
+    let el = card;
+    let depth = 0;
+    while (depth < 5) {
+      // Look for HR separators at this level
+      const children = Array.from(el.children);
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i];
+        if (child.tagName !== "HR") continue;
+        if (child.getAttribute("role") !== "presentation") continue;
+
+        // Check if preceding sibling contains social context text
+        const prev = children[i - 1];
+        if (!prev) continue;
+        const prevText = prev.innerText || "";
+        if (!SOCIAL_CONTEXT_RE.test(prevText)) continue;
+
+        // Found it! The inner post starts after this HR.
+        // Build a lightweight container holding only the inner post children
+        // (from HR+1 up to the next HR or actions bar).
+        const innerChildren = [];
+        for (let j = i + 1; j < children.length; j++) {
+          const sib = children[j];
+          // Stop at the second HR (engagement/actions separator)
+          if (sib.tagName === "HR") break;
+          innerChildren.push(sib);
+        }
+
+        if (innerChildren.length === 0) return null;
+
+        // Return the parent element + the range, so callers can scope
+        // their queries to just the inner post elements.
+        return { container: el, startIdx: i + 1, innerChildren };
+      }
+
+      // No HR at this level — drill down if there's a single wrapper child
+      if (el.children.length <= 2) {
+        const first = el.firstElementChild;
+        if (first && first.tagName === "DIV" && first.getBoundingClientRect().height > 50) {
+          el = first;
+          depth++;
+          continue;
+        }
+      }
+      break;
+    }
+    return null;
+  }
+
+  /**
+   * If the card is a nested post, creates a temporary DOM fragment
+   * containing only the inner post's elements for text extraction.
+   * Falls through to null for regular posts.
+   */
+  function getInnerPostCard(card) {
+    const scope = findInnerPostScope(card);
+    if (!scope) return null;
+
+    // Build a detached container so querySelectorAll and innerText work
+    const frag = document.createElement("div");
+    for (const child of scope.innerChildren) {
+      frag.appendChild(child.cloneNode(true));
+    }
+    return { fragment: frag, liveChildren: scope.innerChildren };
+  }
+
   // ─── Text extraction ─────────────────────────────────────────────────
   // Strategy: if "… more" exists, use its parent for clean text (proven).
   // Otherwise, pull text from content sections, skipping author,
   // engagement stats, inline comments, and empty sections.
+  //
+  // For nested posts ("X likes/commented/celebrates this"), we first
+  // narrow the scope to just the inner post using HR separators.
 
   function extractPostText(card, pair) {
+    // For nested posts, narrow scope to the inner post only
+    const inner = getInnerPostCard(card);
+    if (inner) {
+      // Try "… more" inside the inner post fragment
+      const innerMoreBtn = findMoreButton(inner.fragment);
+      if (innerMoreBtn) {
+        const textContainer = innerMoreBtn.parentElement;
+        if (textContainer) {
+          const clone = textContainer.cloneNode(true);
+          for (const b of clone.querySelectorAll("button")) b.remove();
+          const text = clone.innerText.trim();
+          if (text.length >= 20) return text;
+        }
+      }
+
+      // Fall back to innerText of the fragment, filtering noise
+      const fullText = inner.fragment.innerText || "";
+      const lines = fullText.split("\n").map(l => l.trim()).filter(Boolean);
+      const noise = /^(Like|Comment|Repost|Send|Reply|Report|Follow|Connect|\d+ reactions?|\d+ comments?|\d+ reposts?|\d+$|Edited|Promoted|Suggested|\u2026\s?more)$/i;
+      const cleaned = [];
+      let pastAuthor = false;
+      for (const line of lines) {
+        if (!pastAuthor) {
+          if (/^\d+[smhd]\s*\u00B7?$/.test(line) || /^(\d+(st|nd|rd)|\d+\+)$/.test(line)) {
+            pastAuthor = true;
+            continue;
+          }
+          if (cleaned.length === 0 && line.length < 60 && !line.includes(".")) continue;
+        }
+        if (noise.test(line)) continue;
+        cleaned.push(line);
+      }
+      const innerText = cleaned.join("\n").trim();
+      if (innerText.length >= 20) return innerText;
+    }
     // Preferred: "… more" button gives us clean text
     const moreBtn = findMoreButton(card);
     if (moreBtn) {
@@ -184,21 +408,126 @@
       }
     }
 
-    // Fallback: extract from content sections
+    // Fallback 1: extract from content sections
     const sections = getContentSections(card, pair);
-    if (!sections) return "";
-
-    let text = "";
-    for (const section of sections.content) {
-      if (isAuthorSection(section)) continue;
-      if (isEngagementSection(section)) continue;
-      if (isInlineComment(section)) continue;
-      const sectionText = section.innerText.trim();
-      if (sectionText.length === 0) continue;
-      text += sectionText + "\n";
+    if (sections) {
+      let text = "";
+      for (const section of sections.content) {
+        if (isAuthorSection(section)) continue;
+        if (isEngagementSection(section)) continue;
+        if (isInlineComment(section)) continue;
+        const sectionText = section.innerText.trim();
+        if (sectionText.length === 0) continue;
+        text += sectionText + "\n";
+      }
+      if (text.trim().length >= 20) return text.trim();
     }
-    return text.trim();
+
+    // Fallback 2: direct text extraction from post boundary.
+    // LinkedIn sometimes uses fully obfuscated class names, so structured
+    // extraction can fail. Grab the full innerText and strip known noise
+    // (author info, engagement stats, action bar text).
+    const fullText = card.innerText || "";
+    // Split into lines and filter out noise
+    const lines = fullText.split("\n").map(l => l.trim()).filter(Boolean);
+    const noise = /^(Like|Comment|Repost|Send|Reply|Report|Follow|Connect|\d+ reactions?|\d+ comments?|\d+ reposts?|\d+$|Edited|Promoted|Suggested|\u2026\s?more)$/i;
+    const cleaned = [];
+    let pastAuthor = false;
+    for (const line of lines) {
+      // Skip author block lines (name, title, connection degree, time)
+      if (!pastAuthor) {
+        if (/^\d+[smhd]\s*\u00B7?$/.test(line) || /^(\d+(st|nd|rd)|\d+\+)$/.test(line)) {
+          pastAuthor = true;
+          continue;
+        }
+        // Short lines near the top are likely author/title info
+        if (cleaned.length === 0 && line.length < 60 && !line.includes(".")) continue;
+      }
+      if (noise.test(line)) continue;
+      cleaned.push(line);
+    }
+    return cleaned.join("\n").trim();
   }
+
+  // ─── Debug: highlight the DOM elements that extractPostText reads ──────
+  const HIGHLIGHT_CLASS = "ai-detector-debug-highlight";
+
+  function highlightExtractedText(card, pair) {
+    // Path 0: nested post → highlight just the inner post content
+    const scope = findInnerPostScope(card);
+    if (scope) {
+      // Highlight the inner post elements (skip author, just content)
+      for (let i = 1; i < scope.innerChildren.length; i++) {
+        const child = scope.innerChildren[i];
+        if (child.innerText.trim().length > 0) {
+          child.classList.add(HIGHLIGHT_CLASS);
+          return;
+        }
+      }
+    }
+
+    // Path 1: "… more" button → highlight its parent container
+    const moreBtn = findMoreButton(card);
+    if (moreBtn) {
+      const textContainer = moreBtn.parentElement;
+      if (textContainer) {
+        const clone = textContainer.cloneNode(true);
+        for (const b of clone.querySelectorAll("button")) b.remove();
+        if (clone.innerText.trim().length >= 20) {
+          textContainer.classList.add(HIGHLIGHT_CLASS);
+          return;
+        }
+      }
+    }
+
+    // Path 2: content sections → highlight the sections used
+    const sections = getContentSections(card, pair);
+    if (sections) {
+      let found = false;
+      for (const section of sections.content) {
+        if (isAuthorSection(section)) continue;
+        if (isEngagementSection(section)) continue;
+        if (isInlineComment(section)) continue;
+        if (section.innerText.trim().length === 0) continue;
+        section.classList.add(HIGHLIGHT_CLASS);
+        found = true;
+      }
+      if (found) return;
+    }
+
+    // Path 3: direct text fallback → highlight the entire card
+    card.classList.add(HIGHLIGHT_CLASS);
+  }
+
+  function clearAllHighlights() {
+    for (const el of document.querySelectorAll("." + HIGHLIGHT_CLASS)) {
+      el.classList.remove(HIGHLIGHT_CLASS);
+    }
+  }
+
+  function toggleDebugHighlights() {
+    debugHighlight = !debugHighlight;
+    if (!debugHighlight) {
+      clearAllHighlights();
+      return;
+    }
+    // Highlight extracted text in all processed posts
+    const posts = document.querySelectorAll("[" + PROCESSED_ATTR + "]");
+    for (const post of posts) {
+      const pair = findDismissPair(post) || findActivityVirtualPair(post);
+      highlightExtractedText(post, pair);
+    }
+  }
+
+  // Alt+click on any badge toggles debug highlights
+  document.addEventListener("click", (e) => {
+    if (!e.altKey) return;
+    const badge = e.target.closest(".ai-detector-badge");
+    if (!badge) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleDebugHighlights();
+  }, true);
 
   // ─── Get post key (URN or text hash) from the post boundary ───────────
   function getPostKey(boundary, text) {
@@ -218,7 +547,28 @@
   }
 
   // ─── Get author from profile links in the post boundary ───────────────
+  // For nested posts, returns the inner post's author (person or company).
   function getAuthor(boundary) {
+    // For nested posts, get the inner post author from the first element
+    // after the HR separator (which is the author section of the original post).
+    const scope = findInnerPostScope(boundary);
+    if (scope && scope.innerChildren.length > 0) {
+      const authorEl = scope.innerChildren[0]; // DIV right after HR
+      // Check for person profile links
+      const personLinks = authorEl.querySelectorAll('a[href*="/in/"]');
+      for (const a of personLinks) {
+        const name = a.innerText.trim().split("\n")[0].trim();
+        if (name && name.length > 2 && name.length < 60) return name;
+      }
+      // Check for company page links
+      const companyLinks = authorEl.querySelectorAll('a[href*="/company/"]');
+      for (const a of companyLinks) {
+        const name = a.innerText.trim().split("\n")[0].trim();
+        if (name && name.length > 2 && name.length < 60) return name;
+      }
+    }
+
+    // Regular post: first profile link in the boundary
     const profileLinks = boundary.querySelectorAll('a[href*="/in/"]');
     for (const pl of profileLinks) {
       const name = pl.innerText.trim().split("\n")[0].trim();
@@ -238,8 +588,11 @@
   }
 
   // ─── Find unprocessed posts ────────────────────────────────────────────
-  // Primary anchor: ⋯ + ✕ dismiss pair. Every post has one, never nests.
+  // Delegates to the correct discovery strategy based on page type.
   function findPosts() {
+    if (isActivityPage()) return findActivityPosts();
+
+    // Feed mode: primary anchor is ⋯ + ✕ dismiss pair.
     const allPairs = findAllDismissPairs();
     if (allPairs.length === 0) return [];
 
@@ -248,14 +601,33 @@
     for (const pair of allPairs) {
       const boundary = findPostCard(pair, allPairs);
       if (!boundary) continue;
-      if (boundary.getAttribute(PROCESSED_ATTR)) continue;
+      const existingState = boundary.getAttribute(PROCESSED_ATTR);
+      // Skip already-scored/collapsed/expanded posts, but re-check "unscored"
+      // (content may have loaded late) and "pending" (message may have been
+      // lost). Pending posts retry every 5 seconds.
+      if (existingState && existingState !== "unscored") {
+        if (existingState === "pending") {
+          const sentAt = parseInt(boundary.getAttribute("data-ai-pending-ts") || "0", 10);
+          if (Date.now() - sentAt < 5000) continue; // wait at least 5s before retry
+        } else {
+          continue;
+        }
+      }
 
       const text = extractPostText(boundary, pair);
       if (text.length < 20) {
         // Not enough text to score — inject dimmed "AI –" pill and mark done
-        injectUnscoredBadge(boundary, pair);
-        boundary.setAttribute(PROCESSED_ATTR, "unscored");
+        if (!existingState) {
+          injectUnscoredBadge(boundary, pair);
+          boundary.setAttribute(PROCESSED_ATTR, "unscored");
+        }
         continue;
+      }
+
+      // If this was previously unscored but now has text, remove old badge
+      if (existingState === "unscored") {
+        const oldBadge = boundary.querySelector(".ai-detector-badge");
+        if (oldBadge) oldBadge.remove();
       }
 
       const postKey = getPostKey(boundary, text);
@@ -270,7 +642,7 @@
   // ─── Scan and apply ───────────────────────────────────────────────────
 
   function scanAndApply() {
-    if (!isFeedPage()) return;
+    if (!isSupportedPage()) return;
     if (!contextValid()) return;
 
     const posts = findPosts();
@@ -305,18 +677,22 @@
       zeroResultCount = 0;
     }
 
+    const activity = isActivityPage();
     for (const { boundary, pair, postKey, text, author } of posts) {
       if (scores[postKey]) {
         injectBadge(boundary, postKey, scores[postKey]);
-        if (scores[postKey].score >= threshold) {
+        if (!activity && scores[postKey].score >= threshold) {
           collapsePost(boundary, postKey);
         }
-        boundary.setAttribute(PROCESSED_ATTR, scores[postKey].score >= threshold ? "collapsed" : "scored");
+        boundary.setAttribute(PROCESSED_ATTR, (!activity && scores[postKey].score >= threshold) ? "collapsed" : "scored");
         continue;
       }
 
       newPosts.push({ postKey, text, author });
+      // Show pulsing "AI …" pill while waiting for the score
+      injectPendingBadge(boundary, pair);
       boundary.setAttribute(PROCESSED_ATTR, "pending");
+      boundary.setAttribute("data-ai-pending-ts", String(Date.now()));
     }
 
     if (newPosts.length > 0) {
@@ -334,10 +710,30 @@
   // ─── Apply a single score (callback from background) ──────────────────
 
   function applyScoreToPost(postKey) {
-    if (!isFeedPage()) return;
+    if (!isSupportedPage()) return;
     const scoreData = scores[postKey];
     if (!scoreData) return;
 
+    if (isActivityPage()) {
+      // Activity page: find post by data-urn or text hash
+      const postEls = document.querySelectorAll('[data-urn*="urn:li:activity"]');
+      for (const postEl of postEls) {
+        const urn = postEl.getAttribute("data-urn");
+        const pair = findActivityVirtualPair(postEl);
+        if (!pair) continue;
+
+        const text = extractPostText(postEl, pair);
+        const thisKey = urn || hashText(text);
+
+        if (thisKey === postKey) {
+          injectBadge(postEl, postKey, scoreData);
+          postEl.setAttribute(PROCESSED_ATTR, "scored");
+        }
+      }
+      return;
+    }
+
+    // Feed mode
     const allPairs = findAllDismissPairs();
 
     for (const pair of allPairs) {
@@ -365,9 +761,30 @@
 
   // ─── Inject badge on every scored post ──────────────────────────────
   // ─── Inject dimmed "AI –" pill for posts with too little text to score ──
-  function injectUnscoredBadge(postEl, pair) {
+  function injectPendingBadge(postEl, pair) {
     if (postEl.querySelector(".ai-detector-badge")) return;
-    if (!pair) { pair = findDismissPair(postEl); }
+    if (!pair) { pair = findDismissPair(postEl) || findActivityVirtualPair(postEl); }
+    if (!pair) return;
+
+    const badge = document.createElement("div");
+    badge.className = "ai-detector-badge";
+    badge.innerHTML =
+      `<span class="ai-detector-score ai-detector-score-pending">` +
+        `<span class="ai-detector-ai-label">AI</span>` +
+        `<span class="ai-detector-spinner"></span>` +
+        `<button class="ai-detector-toggle" style="visibility:hidden" aria-hidden="true">\u25BC</button>` +
+      `</span>`;
+
+    const scoreSpan = badge.querySelector(".ai-detector-score");
+    scoreSpan.addEventListener("mouseenter", () => showTooltip(scoreSpan, "Scoring\u2026"));
+    scoreSpan.addEventListener("mouseleave", hideTooltip);
+
+    pair.controlRow.insertBefore(badge, pair.dotsBtn);
+  }
+
+  function injectUnscoredBadge(postEl, pair, tooltipText) {
+    if (postEl.querySelector(".ai-detector-badge")) return;
+    if (!pair) { pair = findDismissPair(postEl) || findActivityVirtualPair(postEl); }
     if (!pair) return;
 
     const badge = document.createElement("div");
@@ -375,23 +792,39 @@
     badge.innerHTML =
       `<span class="ai-detector-score ai-detector-score-unscored">` +
         `<span class="ai-detector-ai-label">AI</span>\u2013` +
+        `<button class="ai-detector-toggle" style="visibility:hidden" aria-hidden="true">\u25BC</button>` +
       `</span>`;
 
+    const tip = tooltipText || "Not enough text to assess";
     const scoreSpan = badge.querySelector(".ai-detector-score");
-    scoreSpan.addEventListener("mouseenter", () => showTooltip(scoreSpan, "Not enough text to assess"));
+    scoreSpan.addEventListener("mouseenter", () => showTooltip(scoreSpan, tip));
     scoreSpan.addEventListener("mouseleave", hideTooltip);
 
     pair.controlRow.insertBefore(badge, pair.dotsBtn);
   }
 
   function injectBadge(postEl, postKey, scoreData) {
-    if (postEl.querySelector(".ai-detector-badge")) return;
+    // Remove any existing pending badge so the real score replaces it
+    const existingBadge = postEl.querySelector(".ai-detector-badge");
+    if (existingBadge) {
+      if (existingBadge.querySelector(".ai-detector-score-pending")) {
+        existingBadge.remove();
+      } else {
+        return; // already has a real badge
+      }
+    }
 
-    const pair = findDismissPair(postEl);
+    const pair = findDismissPair(postEl) || findActivityVirtualPair(postEl);
     if (!pair) return;
 
     const score = scoreData.score;
     const reason = scoreData.reason;
+
+    // score === -1 means Haiku determined this isn't a real post → grey pill
+    if (score === -1) {
+      injectUnscoredBadge(postEl, pair, reason || "Not a post");
+      return;
+    }
 
     const scoreClass = score >= 90 ? "ai-detector-score-high" :
                        score >= 70 ? "ai-detector-score-mid" :
@@ -400,17 +833,18 @@
     const badge = document.createElement("div");
     badge.className = "ai-detector-badge";
     badge.setAttribute("data-ai-key", postKey);
+    const onActivity = isActivityPage();
     badge.innerHTML =
       `<span class="ai-detector-score ${scoreClass}">` +
         `<span class="ai-detector-ai-label">AI</span>${score}%` +
-        `<button class="ai-detector-toggle" aria-label="Toggle AI-flagged post" style="display:none">\u25BC</button>` +
+        `<button class="ai-detector-toggle" aria-label="Toggle AI-flagged post" style="visibility:hidden">\u25BC</button>` +
       `</span>`;
 
     badge.addEventListener("mousedown", (e) => e.stopPropagation(), true);
     badge.querySelector(".ai-detector-toggle").addEventListener("click", (e) => {
       e.stopPropagation();
       e.preventDefault();
-      togglePost(postEl);
+      if (!onActivity) togglePost(postEl);
     }, true);
 
     const scoreSpan = badge.querySelector(".ai-detector-score");
@@ -425,9 +859,9 @@
     if (postEl.getAttribute(PROCESSED_ATTR) === "collapsed") return;
 
     const toggle = postEl.querySelector(".ai-detector-toggle");
-    if (toggle) toggle.style.display = "";
+    if (toggle) toggle.style.visibility = "visible";
 
-    const pair = findDismissPair(postEl);
+    const pair = findDismissPair(postEl) || findActivityVirtualPair(postEl);
     if (!pair) return;
 
     const { content, actions } = getContentSections(postEl, pair);
@@ -453,7 +887,7 @@
   }
 
   function getContentSections(postEl, pair) {
-    if (!pair) pair = findDismissPair(postEl);
+    if (!pair) pair = findDismissPair(postEl) || findActivityVirtualPair(postEl);
     if (!pair) return { header: [], content: [], actions: [] };
 
     let headerChild = pair.controlRow;
@@ -529,7 +963,7 @@
   function reEvaluateAll() {
     clearTimeout(reEvalTimer);
     reEvalTimer = setTimeout(() => {
-      if (!isFeedPage()) return;
+      if (!isSupportedPage()) return;
       document.querySelectorAll(".ai-detector-badge").forEach((b) => b.remove());
       document.querySelectorAll(".ai-detector-section-hidden").forEach((el) => {
         el.classList.remove("ai-detector-section-hidden");
@@ -646,7 +1080,7 @@
       }
     });
 
-    console.log("[AI Detector] v2.5 — dismiss-pair primary anchor. Running initial scan...");
+    console.log("[AI Detector] v2.7 — feed + activity page support. Running initial scan...");
     scanAndApply();
   }
 
@@ -684,6 +1118,15 @@
         scanDebounce = setTimeout(() => {
           try { scanAndApply(); }
           catch (e) { console.warn("[AI Detector] scanAndApply error:", e); }
+          // Re-apply debug highlights if active (e.g. after "… more" expands)
+          if (debugHighlight) {
+            const posts = document.querySelectorAll("[" + PROCESSED_ATTR + "]");
+            for (const post of posts) {
+              if (post.querySelector("." + HIGHLIGHT_CLASS)) continue; // already highlighted
+              const pair = findDismissPair(post) || findActivityVirtualPair(post);
+              highlightExtractedText(post, pair);
+            }
+          }
         }, 500);
       });
 
@@ -704,15 +1147,64 @@
   boot();
 
   // ─── SPA navigation handler ──────────────────────────────────────────
+  // LinkedIn uses history.pushState for SPA navigation (Home click, etc.).
+  // We intercept pushState/replaceState for instant detection, plus
+  // listen for popstate (back/forward), and keep a 1s poll as safety net.
+
   let lastPath = location.pathname;
+
+  function onNavigate() {
+    if (location.pathname === lastPath) return;
+    lastPath = location.pathname;
+    zeroResultCount = 0;
+    diagnosticNotified = false;
+    if (isSupportedPage()) {
+      // Immediate scan + delayed re-scans to catch late-rendering posts.
+      // Activity pages can take longer to render after SPA navigation.
+      boot();
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 500);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 1500);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 3000);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 5000);
+    }
+  }
+
+  // Intercept history.pushState and replaceState
+  const origPushState = history.pushState;
+  const origReplaceState = history.replaceState;
+  history.pushState = function () {
+    origPushState.apply(this, arguments);
+    onNavigate();
+  };
+  history.replaceState = function () {
+    origReplaceState.apply(this, arguments);
+    onNavigate();
+  };
+
+  // Back/forward button
+  window.addEventListener("popstate", onNavigate);
+
+  // LinkedIn sometimes navigates via link clicks without triggering pushState
+  // immediately. Detect navigation after any click on a link.
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a[href]");
+    if (!link) return;
+    // Check URL after a short delay to let LinkedIn's router update
+    setTimeout(onNavigate, 300);
+    setTimeout(onNavigate, 800);
+  }, true);
+
+  // Re-scan when tab becomes visible (switching back to LinkedIn tab)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && isSupportedPage() && contextValid()) {
+      try { scanAndApply(); } catch (e) {}
+    }
+  });
+
+  // Safety-net poll (1s instead of 2s)
   setInterval(() => {
     if (!contextValid()) { startContextRecovery(); return; }
-    if (location.pathname !== lastPath) {
-      lastPath = location.pathname;
-      zeroResultCount = 0;
-      diagnosticNotified = false;
-      if (isFeedPage()) boot();
-    }
-  }, 2000);
+    onNavigate();
+  }, 1000);
 
 })();
