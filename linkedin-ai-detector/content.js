@@ -40,6 +40,7 @@
   let apiKeyNotified = false;
   let zeroResultCount = 0;        // consecutive scans with zero posts found
   let diagnosticNotified = false;  // only warn once per page load
+  let debugHighlight = false;      // toggle: highlight extracted text
 
   function contextValid() {
     try { return !!chrome.runtime?.id; } catch { return false; }
@@ -319,6 +320,73 @@
     }
     return cleaned.join("\n").trim();
   }
+
+  // ─── Debug: highlight the DOM elements that extractPostText reads ──────
+  const HIGHLIGHT_CLASS = "ai-detector-debug-highlight";
+
+  function highlightExtractedText(card, pair) {
+    // Path 1: "… more" button → highlight its parent container
+    const moreBtn = findMoreButton(card);
+    if (moreBtn) {
+      const textContainer = moreBtn.parentElement;
+      if (textContainer) {
+        const clone = textContainer.cloneNode(true);
+        for (const b of clone.querySelectorAll("button")) b.remove();
+        if (clone.innerText.trim().length >= 20) {
+          textContainer.classList.add(HIGHLIGHT_CLASS);
+          return;
+        }
+      }
+    }
+
+    // Path 2: content sections → highlight the sections used
+    const sections = getContentSections(card, pair);
+    if (sections) {
+      let found = false;
+      for (const section of sections.content) {
+        if (isAuthorSection(section)) continue;
+        if (isEngagementSection(section)) continue;
+        if (isInlineComment(section)) continue;
+        if (section.innerText.trim().length === 0) continue;
+        section.classList.add(HIGHLIGHT_CLASS);
+        found = true;
+      }
+      if (found) return;
+    }
+
+    // Path 3: direct text fallback → highlight the entire card
+    card.classList.add(HIGHLIGHT_CLASS);
+  }
+
+  function clearAllHighlights() {
+    for (const el of document.querySelectorAll("." + HIGHLIGHT_CLASS)) {
+      el.classList.remove(HIGHLIGHT_CLASS);
+    }
+  }
+
+  function toggleDebugHighlights() {
+    debugHighlight = !debugHighlight;
+    if (!debugHighlight) {
+      clearAllHighlights();
+      return;
+    }
+    // Highlight extracted text in all processed posts
+    const posts = document.querySelectorAll("[" + PROCESSED_ATTR + "]");
+    for (const post of posts) {
+      const pair = findDismissPair(post) || findActivityVirtualPair(post);
+      highlightExtractedText(post, pair);
+    }
+  }
+
+  // Alt+click on any badge toggles debug highlights
+  document.addEventListener("click", (e) => {
+    if (!e.altKey) return;
+    const badge = e.target.closest(".ai-detector-badge");
+    if (!badge) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleDebugHighlights();
+  }, true);
 
   // ─── Get post key (URN or text hash) from the post boundary ───────────
   function getPostKey(boundary, text) {
@@ -888,6 +956,15 @@
         scanDebounce = setTimeout(() => {
           try { scanAndApply(); }
           catch (e) { console.warn("[AI Detector] scanAndApply error:", e); }
+          // Re-apply debug highlights if active (e.g. after "… more" expands)
+          if (debugHighlight) {
+            const posts = document.querySelectorAll("[" + PROCESSED_ATTR + "]");
+            for (const post of posts) {
+              if (post.querySelector("." + HIGHLIGHT_CLASS)) continue; // already highlighted
+              const pair = findDismissPair(post) || findActivityVirtualPair(post);
+              highlightExtractedText(post, pair);
+            }
+          }
         }, 500);
       });
 
@@ -920,10 +997,13 @@
     zeroResultCount = 0;
     diagnosticNotified = false;
     if (isSupportedPage()) {
-      // Immediate scan + delayed re-scans to catch late-rendering posts
+      // Immediate scan + delayed re-scans to catch late-rendering posts.
+      // Activity pages can take longer to render after SPA navigation.
       boot();
-      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 1000);
-      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 2500);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 500);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 1500);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 3000);
+      setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 5000);
     }
   }
 
@@ -941,6 +1021,16 @@
 
   // Back/forward button
   window.addEventListener("popstate", onNavigate);
+
+  // LinkedIn sometimes navigates via link clicks without triggering pushState
+  // immediately. Detect navigation after any click on a link.
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("a[href]");
+    if (!link) return;
+    // Check URL after a short delay to let LinkedIn's router update
+    setTimeout(onNavigate, 300);
+    setTimeout(onNavigate, 800);
+  }, true);
 
   // Re-scan when tab becomes visible (switching back to LinkedIn tab)
   document.addEventListener("visibilitychange", () => {

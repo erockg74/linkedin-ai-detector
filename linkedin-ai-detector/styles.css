@@ -180,4 +180,15 @@
   color: #fff;
 }
 
-@keyframes a
+@keyframes aiDetectorSlideIn {
+  from { transform: translateX(100%); opacity: 0; }
+  to   { transform: translateX(0); opacity: 1; }
+}
+
+/* ─── Debug: highlight extracted text ──────────────────────────────── */
+
+.ai-detector-debug-highlight {
+  background: rgba(250, 204, 21, 0.35) !important;
+  outline: 2px solid rgba(234, 179, 8, 0.6) !important;
+  border-radius: 3px;
+}
