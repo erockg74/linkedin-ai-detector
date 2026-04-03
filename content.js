@@ -16,6 +16,17 @@
 (function () {
   "use strict";
 
+  // ─── Re-injection guard ──────────────────────────────────────────────
+  // The background script may re-inject content.js after SPA navigation
+  // when the previous instance's context has died. Only skip if an
+  // existing instance is still alive (has a valid chrome.runtime context).
+  if (window.__aiDetectorLoaded) {
+    try {
+      if (chrome.runtime?.id) return; // existing instance is healthy
+    } catch (e) { /* context dead — fall through to re-initialize */ }
+  }
+  window.__aiDetectorLoaded = true;
+
   // ─── Page-type guards ────────────────────────────────────────────────
   function isFeedPage() {
     const path = location.pathname;
@@ -649,20 +660,29 @@
     const newPosts = [];
 
     // ─── Self-healing diagnostics ─────────────────────────────────────
+    // Activity pages render data-urn elements asynchronously — give them
+    // more time before warning (6 scans vs 3 for feed).
+    const diagThreshold = isActivityPage() ? 6 : 3;
     if (posts.length === 0 && !diagnosticNotified) {
       const hasContent = document.body.scrollHeight > window.innerHeight * 1.5;
       const hasButtons = document.querySelectorAll("button").length > 10;
       if (hasContent && hasButtons) {
         zeroResultCount++;
-        if (zeroResultCount >= 3) {
+        if (zeroResultCount >= diagThreshold) {
           diagnosticNotified = true;
-          const allPairs = findAllDismissPairs();
+          const onActivity = isActivityPage();
+          const allPairs = onActivity ? [] : findAllDismissPairs();
+          const urnCount = onActivity
+            ? document.querySelectorAll('[data-urn*="urn:li:activity"]').length
+            : 0;
           console.warn(
             "[AI Detector] Diagnostic: 0 posts detected after",
             zeroResultCount, "scans on a page with content.",
             "LinkedIn may have changed their DOM structure.",
-            "\n  - Dismiss pairs found:", allPairs.length,
-            "\n  - Post cards resolved:", (() => {
+            onActivity
+              ? "\n  - Activity URN elements found: " + urnCount
+              : "\n  - Dismiss pairs found: " + allPairs.length,
+            onActivity ? "" : "\n  - Post cards resolved: " + (() => {
               const seen = new Set();
               for (const p of allPairs) {
                 const card = findPostCard(p, allPairs);
@@ -1066,7 +1086,13 @@
       console.warn("[AI Detector] sendMessage error:", e);
     }
 
-    chrome.runtime.onMessage.addListener((msg) => {
+    chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+      // PING: background checks if content script is alive
+      if (msg.type === "PING") {
+        sendResponse({ pong: true });
+        return;
+      }
+
       if (!contextValid()) { startContextRecovery(); return; }
 
       if (msg.type === "SCORE_READY") {
@@ -1145,6 +1171,17 @@
     startContextRecovery();
   }
   boot();
+
+  // Activity pages (and sometimes feed) can take a while to render
+  // their post elements after the initial page load. The MutationObserver
+  // handles ongoing mutations, but these delayed scans catch content that
+  // renders in the gap between DOMContentLoaded and observer attachment.
+  if (isSupportedPage()) {
+    setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 500);
+    setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 1500);
+    setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 3000);
+    setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 5000);
+  }
 
   // ─── SPA navigation handler ──────────────────────────────────────────
   // LinkedIn uses history.pushState for SPA navigation (Home click, etc.).

@@ -3,7 +3,7 @@
   "name": "LinkedIn AI Post Detector",
   "version": "2.9.0",
   "description": "Detects AI-generated posts in your LinkedIn feed using Claude Haiku scoring. BYOK.",
-  "permissions": ["storage"],
+  "permissions": ["storage", "scripting", "tabs"],
   "host_permissions": ["*://*.linkedin.com/*", "https://api.anthropic.com/*"],
   "background": {
     "service_worker": "background.js"
