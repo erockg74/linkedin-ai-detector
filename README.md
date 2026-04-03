@@ -49,7 +49,13 @@ The extension uses an anchor-first DOM discovery approach. Instead of relying on
 1. **`data-urn` elements** — each `div[data-urn*="activity"]` is the post card directly (no boundary walking needed).
 2. **Control menu button** — the single ⋯ button anchors badge placement via a synthesized "virtual pair."
 
-SPA navigation is detected via `history.pushState`/`replaceState` interception, `popstate`, and `visibilitychange` listeners with triple-scan on navigation. Self-healing diagnostics log a console warning when detection stops working, and pending posts auto-retry if the service worker connection is lost.
+**Nested/reshared posts** ("X likes this", "X commented on this", "X celebrates this"):
+
+LinkedIn wraps the original post inside a social context wrapper. The extension detects these using `<hr role="presentation">` — a semantic HTML separator between the social context line and the inner post. This is an accessibility element that LinkedIn is unlikely to change. The inner post's text and author are extracted separately so scoring reflects the original content, not the wrapper.
+
+**SPA navigation resilience:**
+
+LinkedIn is a single-page app, so navigating between pages doesn't trigger a fresh page load. The content script's execution context can die during SPA transitions. The background service worker monitors tab URL changes, pings the content script, and re-injects it when the context is dead. SPA navigation is also detected via `history.pushState`/`replaceState` interception, `popstate`, and `visibilitychange` listeners with delayed re-scans. Self-healing diagnostics log a console warning when detection stops working.
 
 ## Files
 
