@@ -147,6 +147,23 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
+// ─── Parallel scoring with concurrency limit ────────────────────────────
+const MAX_CONCURRENT = 5;
+let activeScoring = 0;
+const scoringQueue = [];
+
+function processQueue(apiKey) {
+  while (activeScoring < MAX_CONCURRENT && scoringQueue.length > 0) {
+    const post = scoringQueue.shift();
+    if (scoreCache.has(post.postKey) || pendingScores.has(post.postKey)) continue;
+    activeScoring++;
+    scorePost(post.text, post.postKey, apiKey).finally(() => {
+      activeScoring--;
+      processQueue(apiKey);
+    });
+  }
+}
+
 async function handleFeedPosts(posts) {
   if (!posts || !posts.length) return;
 
@@ -167,9 +184,10 @@ async function handleFeedPosts(posts) {
   for (const post of posts) {
     if (!post.postKey || !post.text) continue;
     if (post.text.trim().length < 20) continue;
-    if (scoreCache.has(post.postKey)) continue;
-    await scorePost(post.text, post.postKey, apiKey);
+    if (scoreCache.has(post.postKey) || pendingScores.has(post.postKey)) continue;
+    scoringQueue.push(post);
   }
+  processQueue(apiKey);
 }
 
 // ─── Restore scores from session storage on startup ──────────────────────

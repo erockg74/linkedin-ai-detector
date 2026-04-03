@@ -1153,7 +1153,7 @@
               highlightExtractedText(post, pair);
             }
           }
-        }, 500);
+        }, 200);
       });
 
       observer.observe(document.body, { childList: true, subtree: true });
