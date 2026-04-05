@@ -696,26 +696,30 @@
 
     const posts = findPosts();
     if (isActivityPage() && posts.length === 0) {
-      // Check if content is hidden inside shadow DOMs
-      const shadowHosts = [];
-      const allEls = document.querySelectorAll("*");
-      for (const el of allEls) {
-        if (el.shadowRoot) shadowHosts.push(el);
-      }
-      let shadowUrns = 0;
-      let shadowDismiss = 0;
-      for (const host of shadowHosts) {
-        shadowUrns += host.shadowRoot.querySelectorAll('[data-urn*="urn:li:activity"]').length;
-        shadowDismiss += host.shadowRoot.querySelectorAll('[aria-label*="Dismiss"]').length;
-      }
-      // Check iframes too
+      // Check iframes
       const iframes = document.querySelectorAll("iframe");
-      console.log("[AI Detector] Activity scan: 0 posts in DOM.",
-        shadowHosts.length, "shadow hosts,",
-        shadowUrns, "URNs in shadows,",
-        shadowDismiss, "dismiss btns in shadows,",
-        iframes.length, "iframes.",
-        shadowHosts.map(h => h.id || h.tagName).join(", "));
+      const iframeSrcs = [];
+      for (const f of iframes) {
+        const src = f.src || f.getAttribute("src") || "(no src)";
+        let sameOrigin = false;
+        try { sameOrigin = !!f.contentDocument; } catch (e) {}
+        iframeSrcs.push({ src: src.slice(0, 100), sameOrigin });
+      }
+      // Dump main content structure
+      const main = document.querySelector("main") || document.querySelector('[role="main"]');
+      const mainChildren = main ? Array.from(main.children).map(c =>
+        c.tagName + (c.id ? "#" + c.id : "") + (c.className ? "." + String(c.className).split(" ")[0] : "")
+      ).join(", ") : "NO MAIN";
+      // Check for any elements with "activity" in attributes
+      const activityEls = document.querySelectorAll('[class*="activity"], [data-urn*="activity"], [id*="activity"]');
+      console.log("[AI Detector] Activity page debug:",
+        "\n  main children:", mainChildren,
+        "\n  iframes:", JSON.stringify(iframeSrcs),
+        "\n  activity-related els:", activityEls.length);
+      // Log main innerHTML summary (first 500 chars)
+      if (main) {
+        console.log("[AI Detector] Main inner HTML preview:", main.innerHTML.slice(0, 800));
+      }
     }
     const newPosts = [];
 
