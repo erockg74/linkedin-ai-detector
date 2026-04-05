@@ -67,12 +67,19 @@
     return "txh:" + (hash >>> 0).toString(36);
   }
 
-  // ─── PRIMARY ANCHOR: find ALL ⋯ + ✕ dismiss pairs on the page ────────
-  // Two consecutive sibling buttons, both SVG-only (no text), visible.
+  // ─── PRIMARY ANCHOR: find ALL post control-menu buttons on the page ───
+  // Strategy:
+  //   1. ⋯ + ✕ dismiss pair — two adjacent SVG-only buttons (regular posts).
+  //   2. Lone "Open control menu" button — for promoted/sponsored posts
+  //      that have ⋯ but no ✕ dismiss button. Uses the stable aria-label
+  //      attribute: "Open control menu for post by ...".
   // Returns an array of { dotsBtn, dismissBtn, controlRow }.
 
   function findAllDismissPairs() {
     const pairs = [];
+    const pairedBtns = new Set();
+
+    // Pass 1: find ⋯ + ✕ pairs (highest confidence)
     for (const btn of document.querySelectorAll("button")) {
       if (!btn.querySelector("svg")) continue;
       if (btn.textContent.trim().length > 0) continue;
@@ -85,16 +92,32 @@
       if (next.getBoundingClientRect().width === 0) continue;
 
       pairs.push({ dotsBtn: btn, dismissBtn: next, controlRow: btn.parentElement });
+      pairedBtns.add(btn);
+      pairedBtns.add(next);
     }
+
+    // Pass 2: find lone "Open control menu" buttons not already in a pair.
+    // These appear on promoted/sponsored posts that lack a ✕ dismiss button.
+    // The aria-label is a stable accessibility attribute.
+    for (const btn of document.querySelectorAll('button[aria-label^="Open control menu"]')) {
+      if (pairedBtns.has(btn)) continue;
+      if (btn.getBoundingClientRect().width === 0) continue;
+
+      // Synthesize a pair-like object (no dismiss button)
+      pairs.push({ dotsBtn: btn, dismissBtn: null, controlRow: btn.parentElement });
+    }
+
     return pairs;
   }
 
   // ─── Find the ⋯ + ✕ dismiss pair inside a known post boundary ────────
   // Used by injectBadge, collapsePost, etc. when we already have the card.
+  // Falls back to a lone "Open control menu" button for promoted posts.
   function findDismissPair(el) {
     const elRect = el.getBoundingClientRect();
     if (elRect.width === 0) return null;
 
+    // Try ⋯ + ✕ pair first
     for (const btn of el.querySelectorAll("button")) {
       if (!btn.querySelector("svg")) continue;
       if (btn.textContent.trim().length > 0) continue;
@@ -109,6 +132,13 @@
 
       return { dotsBtn: btn, dismissBtn: next, controlRow: btn.parentElement };
     }
+
+    // Fallback: lone "Open control menu" button (promoted/sponsored posts)
+    const menuBtn = el.querySelector('button[aria-label^="Open control menu"]');
+    if (menuBtn && menuBtn.getBoundingClientRect().width > 0) {
+      return { dotsBtn: menuBtn, dismissBtn: null, controlRow: menuBtn.parentElement };
+    }
+
     return null;
   }
 
@@ -258,14 +288,16 @@
 
   // Author section: profile link with visible name (with fallback)
   function isAuthorSection(section) {
+    // Primary: /in/ profile links
     const profileLinks = section.querySelectorAll('a[href*="/in/"]');
     for (const a of profileLinks) {
       const name = a.innerText.trim().split("\n")[0].trim();
       if (name.length > 2 && name.length < 80) return true;
     }
-    if (section.querySelector("a") && section.querySelector("img")) {
-      const links = section.querySelectorAll("a");
-      for (const a of links) {
+    // Fallback: /company/ page links with image (company author headers)
+    const companyLinks = section.querySelectorAll('a[href*="/company/"]');
+    if (companyLinks.length > 0 && section.querySelector("img")) {
+      for (const a of companyLinks) {
         const name = a.innerText.trim().split("\n")[0].trim();
         if (name.length > 2 && name.length < 80) return true;
       }
