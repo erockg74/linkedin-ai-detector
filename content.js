@@ -1302,7 +1302,6 @@
 
   function onNavigate() {
     if (location.pathname === lastPath) return;
-    console.log("[AI Detector] SPA navigation detected:", lastPath, "→", location.pathname);
     lastPath = location.pathname;
     zeroResultCount = 0;
     diagnosticNotified = false;
