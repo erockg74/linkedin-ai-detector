@@ -908,6 +908,7 @@
 
     const score = scoreData.score;
     const reason = scoreData.reason;
+    const tldr = scoreData.tldr || "";
 
     // score === -1 means Haiku determined this isn't a real post → grey pill
     if (score === -1) {
@@ -936,8 +937,15 @@
       if (!onActivity) togglePost(postEl);
     }, true);
 
+    // Build tooltip: reason always shown; TL;DR added for non-collapsed posts
+    const willCollapse = score >= threshold;
+    let tooltipContent = reason;
+    if (!willCollapse && tldr) {
+      tooltipContent = reason + "\n\nTL;DR: " + tldr;
+    }
+
     const scoreSpan = badge.querySelector(".ai-detector-score");
-    scoreSpan.addEventListener("mouseenter", () => showTooltip(scoreSpan, reason));
+    scoreSpan.addEventListener("mouseenter", () => showTooltip(scoreSpan, tooltipContent));
     scoreSpan.addEventListener("mouseleave", hideTooltip);
 
     pair.controlRow.insertBefore(badge, pair.dotsBtn);
@@ -1107,7 +1115,22 @@
       tooltipEl.className = "ai-detector-tooltip";
       document.body.appendChild(tooltipEl);
     }
-    tooltipEl.textContent = text;
+    // Support line breaks for TL;DR display
+    if (text.includes("\n")) {
+      tooltipEl.innerHTML = "";
+      const parts = text.split("\n\n");
+      for (let i = 0; i < parts.length; i++) {
+        if (i > 0) tooltipEl.appendChild(document.createElement("br"));
+        const span = document.createElement("span");
+        if (parts[i].startsWith("TL;DR:")) {
+          span.style.cssText = "display:block;margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.2);";
+        }
+        span.textContent = parts[i];
+        tooltipEl.appendChild(span);
+      }
+    } else {
+      tooltipEl.textContent = text;
+    }
     const r = anchor.getBoundingClientRect();
     tooltipEl.style.top = (r.top - 8) + "px";
     tooltipEl.style.left = r.left + "px";
@@ -1175,7 +1198,7 @@
       if (!contextValid()) { startContextRecovery(); return; }
 
       if (msg.type === "SCORE_READY") {
-        scores[msg.postKey] = { score: msg.score, reason: msg.reason };
+        scores[msg.postKey] = { score: msg.score, reason: msg.reason, tldr: msg.tldr || "" };
         applyScoreToPost(msg.postKey);
       }
 

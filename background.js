@@ -3,7 +3,7 @@
 // postKey can be a URN (urn:li:activity:...) or a text hash (txh:...).
 
 const HAIKU_MODEL = "claude-haiku-4-5-20251001";
-const HAIKU_MAX_TOKENS = 100;
+const HAIKU_MAX_TOKENS = 200;
 
 const SCORING_PROMPT = `You are evaluating whether a LinkedIn post was likely written by AI (ChatGPT, Claude, etc.) or by a human.
 
@@ -20,10 +20,12 @@ Post text:
 {post_text}
 """
 
-Respond with JSON only: {"score": 0-100, "reason": "one sentence"}
+Respond with JSON only: {"score": 0-100, "reason": "short phrase", "tldr": "1-2 sentence summary of the post"}
 Score 0 = definitely human, 100 = definitely AI.
+The "reason" must be a short phrase (under 8 words) explaining the score, e.g. "formulaic hook-bullets-CTA structure" or "specific personal story with real details".
+The "tldr" is a brief plain-language summary of what the post is about.
 IMPORTANT: Only use score -1 for text that is clearly NOT a user-authored post — for example, a standalone ad unit, job listing card, or LinkedIn UI element with zero user-written content. Posts that share articles, link to news stories, or include quoted material ARE still user posts — score them normally based on whatever commentary or framing the author added. When in doubt, score it.
-If the text is genuinely not a post, respond with: {"score": -1, "reason": "Not a post"}`;
+If the text is genuinely not a post, respond with: {"score": -1, "reason": "Not a post", "tldr": ""}`;
 
 // Track posts currently being scored to avoid duplicates
 const pendingScores = new Set();
@@ -81,8 +83,9 @@ async function scorePost(postText, postKey, apiKey) {
     // -1 = "not a post" → pass through as-is; otherwise clamp 0–100
     const score = rawScore === -1 ? -1 : Math.max(0, Math.min(100, rawScore));
     const reason = result.reason || "";
+    const tldr = result.tldr || "";
 
-    const scoreData = { score, reason, postKey, timestamp: Date.now() };
+    const scoreData = { score, reason, tldr, postKey, timestamp: Date.now() };
     scoreCache.set(postKey, scoreData);
 
     // Persist to session storage
@@ -105,7 +108,8 @@ async function scorePost(postText, postKey, apiKey) {
         type: "SCORE_READY",
         postKey,
         score,
-        reason
+        reason,
+        tldr
       }).catch(() => {
         // Tab might not have content script yet — safe to ignore
       });
