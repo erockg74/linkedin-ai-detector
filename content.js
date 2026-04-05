@@ -734,9 +734,14 @@
       if (scores[postKey]) {
         injectBadge(boundary, postKey, scores[postKey]);
         if (!activity && scores[postKey].score >= threshold) {
-          collapsePost(boundary, postKey);
+          const didCollapse = collapsePost(boundary, postKey, pair);
+          if (!didCollapse) {
+            // DOM not ready yet — mark scored so next scan retries
+            boundary.setAttribute(PROCESSED_ATTR, "scored");
+          }
+        } else {
+          boundary.setAttribute(PROCESSED_ATTR, "scored");
         }
-        boundary.setAttribute(PROCESSED_ATTR, (!activity && scores[postKey].score >= threshold) ? "collapsed" : "scored");
         continue;
       }
 
@@ -756,6 +761,26 @@
       } catch (e) {
         console.warn("[AI Detector] sendMessage error:", e);
       }
+    }
+
+    // ─── Retry collapse for above-threshold posts stuck in "scored" state ──
+    // This catches posts where collapsePost failed on first attempt
+    // (DOM not ready, virtual recycling, etc.)
+    if (!activity) {
+      retryPendingCollapses();
+    }
+  }
+
+  function retryPendingCollapses() {
+    const scoredEls = document.querySelectorAll(`[${PROCESSED_ATTR}="scored"]`);
+    for (const el of scoredEls) {
+      const badge = el.querySelector(".ai-detector-badge");
+      if (!badge) continue;
+      const key = badge.getAttribute("data-ai-key");
+      if (!key || !scores[key]) continue;
+      if (scores[key].score < threshold) continue;
+      // This post is above threshold but not collapsed — retry
+      collapsePost(el, key);
     }
   }
 
@@ -798,9 +823,21 @@
       if (thisKey === postKey) {
         injectBadge(boundary, postKey, scoreData);
         if (scoreData.score >= threshold) {
-          collapsePost(boundary, postKey);
+          const didCollapse = collapsePost(boundary, postKey, pair);
+          if (!didCollapse) {
+            // DOM wasn't ready — retry after a frame + short delay
+            boundary.setAttribute(PROCESSED_ATTR, "scored");
+            requestAnimationFrame(() => {
+              setTimeout(() => {
+                if (boundary.getAttribute(PROCESSED_ATTR) !== "collapsed") {
+                  collapsePost(boundary, postKey);
+                }
+              }, 150);
+            });
+          }
+        } else {
+          boundary.setAttribute(PROCESSED_ATTR, "scored");
         }
-        boundary.setAttribute(PROCESSED_ATTR, scoreData.score >= threshold ? "collapsed" : "scored");
       }
     }
   }
@@ -907,25 +944,35 @@
   }
 
   // ─── Collapse post (only when above threshold) ────────────────────────
-  function collapsePost(postEl, postKey) {
-    if (postEl.getAttribute(PROCESSED_ATTR) === "collapsed") return;
+  // Returns true if content was actually hidden, false otherwise.
+  // Accepts an optional pair to avoid re-querying the DOM (race-safe).
+  function collapsePost(postEl, postKey, existingPair) {
+    if (postEl.getAttribute(PROCESSED_ATTR) === "collapsed") return true;
 
-    const toggle = postEl.querySelector(".ai-detector-toggle");
-    if (toggle) toggle.style.visibility = "visible";
-
-    const pair = findDismissPair(postEl) || findActivityVirtualPair(postEl);
-    if (!pair) return;
+    const pair = existingPair || findDismissPair(postEl) || findActivityVirtualPair(postEl);
+    if (!pair) return false;
 
     const { content, actions } = getContentSections(postEl, pair);
+
+    // Count how many non-author sections we'll actually hide
+    let hiddenCount = 0;
     for (const section of content) {
       if (isAuthorSection(section)) continue;
       section.classList.add("ai-detector-section-hidden");
+      hiddenCount++;
     }
     for (const section of actions) {
       section.classList.add("ai-detector-section-hidden");
+      hiddenCount++;
     }
 
+    if (hiddenCount === 0) return false;
+
+    // Only show toggle and mark collapsed when we actually hid something
+    const toggle = postEl.querySelector(".ai-detector-toggle");
+    if (toggle) toggle.style.visibility = "visible";
     postEl.setAttribute(PROCESSED_ATTR, "collapsed");
+    return true;
   }
 
   // ─── Find the actions bar anchor (Like/Comment/Repost/Send) ────────
