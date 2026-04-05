@@ -1131,16 +1131,14 @@
       tooltipEl.textContent = text;
     }
     const r = anchor.getBoundingClientRect();
-    // Position below and right-aligned to the pill
+    // Position below and left-aligned to the pill
     tooltipEl.style.top = (r.bottom + 8) + "px";
-    tooltipEl.style.left = r.right + "px";
+    tooltipEl.style.left = r.left + "px";
     requestAnimationFrame(() => {
       const tt = tooltipEl.getBoundingClientRect();
-      // Right-justify: align tooltip's right edge with pill's right edge
-      tooltipEl.style.left = (r.right - tt.width) + "px";
-      // If it overflows left, shift right
-      if (tt.left < 8) {
-        tooltipEl.style.left = "8px";
+      // If it overflows right, shift left
+      if (tt.right > window.innerWidth - 8) {
+        tooltipEl.style.left = (window.innerWidth - tt.width - 8) + "px";
       }
       // If it overflows bottom, flip above the pill
       if (r.bottom + 8 + tt.height > window.innerHeight - 8) {
