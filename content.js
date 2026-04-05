@@ -695,29 +695,27 @@
     }
 
     const posts = findPosts();
-    if (isActivityPage()) {
-      const urnEls = document.querySelectorAll('[data-urn*="urn:li:activity"]');
-      const anyUrn = document.querySelectorAll('[data-urn]');
-      const menusFound = document.querySelectorAll('.feed-shared-control-menu').length;
-      const dismissPairs = findAllDismissPairs();
-      // Check for any post-like containers
-      const feedUpdates = document.querySelectorAll('.feed-shared-update-v2').length;
-      const occludable = document.querySelectorAll('[data-id*="urn:li:activity"]').length;
-      const mainContent = document.querySelector('main, [role="main"], .scaffold-layout__main');
-      console.log("[AI Detector] Activity scan:",
-        urnEls.length, "activity URNs,",
-        anyUrn.length, "any data-urn,",
-        menusFound, "control menus,",
-        dismissPairs.length, "dismiss pairs,",
-        feedUpdates, "feed-shared-update-v2,",
-        occludable, "data-id activity,",
-        mainContent ? "main exists" : "NO main",
-        posts.length, "scoreable posts");
-      if (anyUrn.length > 0 && anyUrn.length <= 5) {
-        for (const el of anyUrn) {
-          console.log("[AI Detector]   data-urn:", el.getAttribute("data-urn"), "tag:", el.tagName, "class:", el.className.slice(0, 80));
-        }
+    if (isActivityPage() && posts.length === 0) {
+      // Check if content is hidden inside shadow DOMs
+      const shadowHosts = [];
+      const allEls = document.querySelectorAll("*");
+      for (const el of allEls) {
+        if (el.shadowRoot) shadowHosts.push(el);
       }
+      let shadowUrns = 0;
+      let shadowDismiss = 0;
+      for (const host of shadowHosts) {
+        shadowUrns += host.shadowRoot.querySelectorAll('[data-urn*="urn:li:activity"]').length;
+        shadowDismiss += host.shadowRoot.querySelectorAll('[aria-label*="Dismiss"]').length;
+      }
+      // Check iframes too
+      const iframes = document.querySelectorAll("iframe");
+      console.log("[AI Detector] Activity scan: 0 posts in DOM.",
+        shadowHosts.length, "shadow hosts,",
+        shadowUrns, "URNs in shadows,",
+        shadowDismiss, "dismiss btns in shadows,",
+        iframes.length, "iframes.",
+        shadowHosts.map(h => h.id || h.tagName).join(", "));
     }
     const newPosts = [];
 
