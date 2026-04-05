@@ -697,9 +697,27 @@
     const posts = findPosts();
     if (isActivityPage()) {
       const urnEls = document.querySelectorAll('[data-urn*="urn:li:activity"]');
+      const anyUrn = document.querySelectorAll('[data-urn]');
       const menusFound = document.querySelectorAll('.feed-shared-control-menu').length;
-      console.log("[AI Detector] Activity scan:", urnEls.length, "URN elements,",
-        menusFound, "control menus,", posts.length, "scoreable posts");
+      const dismissPairs = findAllDismissPairs();
+      // Check for any post-like containers
+      const feedUpdates = document.querySelectorAll('.feed-shared-update-v2').length;
+      const occludable = document.querySelectorAll('[data-id*="urn:li:activity"]').length;
+      const mainContent = document.querySelector('main, [role="main"], .scaffold-layout__main');
+      console.log("[AI Detector] Activity scan:",
+        urnEls.length, "activity URNs,",
+        anyUrn.length, "any data-urn,",
+        menusFound, "control menus,",
+        dismissPairs.length, "dismiss pairs,",
+        feedUpdates, "feed-shared-update-v2,",
+        occludable, "data-id activity,",
+        mainContent ? "main exists" : "NO main",
+        posts.length, "scoreable posts");
+      if (anyUrn.length > 0 && anyUrn.length <= 5) {
+        for (const el of anyUrn) {
+          console.log("[AI Detector]   data-urn:", el.getAttribute("data-urn"), "tag:", el.tagName, "class:", el.className.slice(0, 80));
+        }
+      }
     }
     const newPosts = [];
 
