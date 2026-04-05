@@ -1160,11 +1160,10 @@
     }
     if (!anchorLi) return;
 
-    // Find the editor to read draft text
-    const editor = shadow.querySelector(".ql-editor[role=\"textbox\"]")
-      || shadow.querySelector("[contenteditable=\"true\"]");
-
-    // Create our LI + button
+    // Create our LI + button.
+    // NOTE: Content script event listeners don't fire for clicks inside a
+    // shadow DOM (isolated world boundary). We use an inline onclick that
+    // dispatches a CustomEvent on document, which the content script can hear.
     const li = document.createElement("li");
     li.className = anchorLi.className.replace(/writing-assistant[^\s]*/g, "").trim();
     li.style.cssText = "margin-left: 4px;";
@@ -1176,54 +1175,9 @@
     btn.style.cssText = "border-radius: 16px; padding: 0 12px; height: 32px; display: flex; align-items: center; gap: 4px; font-weight: 600; font-size: 14px; cursor: pointer; white-space: nowrap;";
     btn.innerHTML =
       '<span style="display:flex;align-items:center;gap:4px;">' +
-        '<span style="font-size:14px;">🤖</span>' +
+        '<span style="font-size:14px;">\uD83E\uDD16</span>' +
         '<span class="ai-detector-composer-label">Score with AI</span>' +
       '</span>';
-
-    btn.addEventListener("click", async (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const text = (editor?.innerText || "").trim();
-      if (text.length < 20) {
-        showComposerResult(shadow, btn, null, "Need 20+ characters to score");
-        return;
-      }
-
-      // Show loading state
-      const label = btn.querySelector(".ai-detector-composer-label");
-      const origText = label.textContent;
-      label.textContent = "Scoring…";
-      btn.disabled = true;
-      btn.style.opacity = "0.6";
-
-      try {
-        const result = await new Promise((resolve) => {
-          chrome.runtime.sendMessage(
-            { type: "SCORE_DRAFT", text },
-            (res) => {
-              if (chrome.runtime.lastError) {
-                resolve({ error: chrome.runtime.lastError.message });
-              } else {
-                resolve(res);
-              }
-            }
-          );
-        });
-
-        if (result.error) {
-          showComposerResult(shadow, btn, null, result.error);
-        } else {
-          showComposerResult(shadow, btn, result.score, result.reason);
-        }
-      } catch (err) {
-        showComposerResult(shadow, btn, null, err.message);
-      } finally {
-        label.textContent = origText;
-        btn.disabled = false;
-        btn.style.opacity = "1";
-      }
-    });
 
     const container = document.createElement("div");
     container.className = "artdeco-carousel__item-container";
@@ -1232,6 +1186,78 @@
 
     // Insert after the anchor LI (Rewrite button or first toolbar item)
     anchorLi.insertAdjacentElement("afterend", li);
+  }
+
+  // ─── Listen for clicks on the Score button via document capture ─────
+  // Content script addEventListener on shadow DOM elements doesn't fire
+  // (isolated world boundary), and LinkedIn's CSP blocks inline onclick.
+  // Instead we use a document-level capture listener and inspect
+  // composedPath() to detect clicks that originated inside our button.
+  document.addEventListener("click", (e) => {
+    const path = e.composedPath();
+    const isOurs = path.some(
+      (n) => n.id === COMPOSER_BTN_ID || n.id === "ai-detector-composer-result"
+    );
+    if (!isOurs) return;
+    // Dismiss popup if clicking on it
+    if (path.some((n) => n.id === "ai-detector-composer-result")) {
+      const popup = getComposerShadow()?.getElementById("ai-detector-composer-result");
+      if (popup) popup.remove();
+      return;
+    }
+    e.stopPropagation();
+    handleComposerScore();
+  }, true);
+
+  async function handleComposerScore() {
+    const shadow = getComposerShadow();
+    if (!shadow) return;
+
+    const btn = shadow.getElementById(COMPOSER_BTN_ID);
+    if (!btn) return;
+
+    const editor = shadow.querySelector(".ql-editor[role=\"textbox\"]")
+      || shadow.querySelector("[contenteditable=\"true\"]");
+
+    const text = (editor?.innerText || "").trim();
+    if (text.length < 20) {
+      showComposerResult(shadow, btn, null, "Need 20+ characters to score");
+      return;
+    }
+
+    // Show loading state
+    const label = btn.querySelector(".ai-detector-composer-label");
+    const origText = label.textContent;
+    label.textContent = "Scoring\u2026";
+    btn.disabled = true;
+    btn.style.opacity = "0.6";
+
+    try {
+      const result = await new Promise((resolve) => {
+        chrome.runtime.sendMessage(
+          { type: "SCORE_DRAFT", text },
+          (res) => {
+            if (chrome.runtime.lastError) {
+              resolve({ error: chrome.runtime.lastError.message });
+            } else {
+              resolve(res);
+            }
+          }
+        );
+      });
+
+      if (result.error) {
+        showComposerResult(shadow, btn, null, result.error);
+      } else {
+        showComposerResult(shadow, btn, result.score, result.reason);
+      }
+    } catch (err) {
+      showComposerResult(shadow, btn, null, err.message);
+    } finally {
+      label.textContent = origText;
+      btn.disabled = false;
+      btn.style.opacity = "1";
+    }
   }
 
   function showComposerResult(shadow, anchorBtn, score, reason) {
@@ -1252,19 +1278,19 @@
       popup.style.background = "#fef3cd";
       popup.style.border = "1px solid #ffc107";
       popup.style.color = "#856404";
-      popup.innerHTML = `⚠️ ${escapeHtml(reason)}`;
+      popup.innerHTML = "\u26A0\uFE0F " + escapeHtml(reason);
     } else {
       const color = score >= 90 ? "#dc3545" : score >= 70 ? "#fd7e14" : "#28a745";
-      const label = score >= 90 ? "Very likely AI" : score >= 70 ? "Likely AI" : "Likely human";
+      const lbl = score >= 90 ? "Very likely AI" : score >= 70 ? "Likely AI" : "Likely human";
       popup.style.background = "#fff";
-      popup.style.border = `2px solid ${color}`;
+      popup.style.border = "2px solid " + color;
       popup.style.color = "#333";
       popup.innerHTML =
-        `<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">` +
-          `<span style="font-size:22px;font-weight:700;color:${color};">${score}%</span>` +
-          `<span style="font-weight:600;color:${color};">${label}</span>` +
-        `</div>` +
-        `<div style="color:#555;font-size:12px;">${escapeHtml(reason)}</div>`;
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">' +
+          '<span style="font-size:22px;font-weight:700;color:' + color + ';">' + score + '%</span>' +
+          '<span style="font-weight:600;color:' + color + ';">' + lbl + '</span>' +
+        '</div>' +
+        '<div style="color:#555;font-size:12px;">' + escapeHtml(reason) + '</div>';
     }
 
     // Position relative to the button
@@ -1276,9 +1302,9 @@
     // Add to shadow root so it's in the same layer
     shadow.appendChild(popup);
 
-    // Auto-dismiss after 6 seconds, or on click
-    popup.addEventListener("click", () => popup.remove());
-    setTimeout(() => { if (popup.parentNode) popup.remove(); }, 6000);
+    // Auto-dismiss after 6 seconds (click dismiss handled by capture listener)
+    const dismiss = () => { if (popup.parentNode) popup.remove(); };
+    setTimeout(dismiss, 6000);
   }
 
   // Watch for the composer modal to appear/disappear using a MutationObserver
