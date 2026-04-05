@@ -685,10 +685,22 @@
   // ─── Scan and apply ───────────────────────────────────────────────────
 
   function scanAndApply() {
-    if (!isSupportedPage()) return;
-    if (!contextValid()) return;
+    if (!isSupportedPage()) {
+      console.log("[AI Detector] scanAndApply: not a supported page", location.pathname);
+      return;
+    }
+    if (!contextValid()) {
+      console.log("[AI Detector] scanAndApply: context not valid");
+      return;
+    }
 
     const posts = findPosts();
+    if (isActivityPage()) {
+      const urnEls = document.querySelectorAll('[data-urn*="urn:li:activity"]');
+      const menusFound = document.querySelectorAll('.feed-shared-control-menu').length;
+      console.log("[AI Detector] Activity scan:", urnEls.length, "URN elements,",
+        menusFound, "control menus,", posts.length, "scoreable posts");
+    }
     const newPosts = [];
 
     // ─── Self-healing diagnostics ─────────────────────────────────────
