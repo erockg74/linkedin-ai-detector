@@ -937,10 +937,9 @@
       if (!onActivity) togglePost(postEl);
     }, true);
 
-    // Build tooltip: reason always shown; TL;DR added for non-collapsed posts
-    const willCollapse = score >= threshold;
+    // Build tooltip: reason + TL;DR summary
     let tooltipContent = reason;
-    if (!willCollapse && tldr) {
+    if (tldr) {
       tooltipContent = reason + "\n\nTL;DR: " + tldr;
     }
 
