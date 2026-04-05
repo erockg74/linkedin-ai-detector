@@ -685,42 +685,10 @@
   // ─── Scan and apply ───────────────────────────────────────────────────
 
   function scanAndApply() {
-    if (!isSupportedPage()) {
-      console.log("[AI Detector] scanAndApply: not a supported page", location.pathname);
-      return;
-    }
-    if (!contextValid()) {
-      console.log("[AI Detector] scanAndApply: context not valid");
-      return;
-    }
+    if (!isSupportedPage()) return;
+    if (!contextValid()) return;
 
     const posts = findPosts();
-    if (isActivityPage() && posts.length === 0) {
-      // Check iframes
-      const iframes = document.querySelectorAll("iframe");
-      const iframeSrcs = [];
-      for (const f of iframes) {
-        const src = f.src || f.getAttribute("src") || "(no src)";
-        let sameOrigin = false;
-        try { sameOrigin = !!f.contentDocument; } catch (e) {}
-        iframeSrcs.push({ src: src.slice(0, 100), sameOrigin });
-      }
-      // Dump main content structure
-      const main = document.querySelector("main") || document.querySelector('[role="main"]');
-      const mainChildren = main ? Array.from(main.children).map(c =>
-        c.tagName + (c.id ? "#" + c.id : "") + (c.className ? "." + String(c.className).split(" ")[0] : "")
-      ).join(", ") : "NO MAIN";
-      // Check for any elements with "activity" in attributes
-      const activityEls = document.querySelectorAll('[class*="activity"], [data-urn*="activity"], [id*="activity"]');
-      console.log("[AI Detector] Activity page debug:",
-        "\n  main children:", mainChildren,
-        "\n  iframes:", JSON.stringify(iframeSrcs),
-        "\n  activity-related els:", activityEls.length);
-      // Log main innerHTML summary (first 500 chars)
-      if (main) {
-        console.log("[AI Detector] Main inner HTML preview:", main.innerHTML.slice(0, 800));
-      }
-    }
     const newPosts = [];
 
     // ─── Self-healing diagnostics ─────────────────────────────────────
@@ -1338,21 +1306,22 @@
     lastPath = location.pathname;
     zeroResultCount = 0;
     diagnosticNotified = false;
+
+    // LinkedIn's SPA renders activity pages using SDUI (Server-Driven UI)
+    // with a completely different DOM that lacks the classic data-urn elements
+    // we need. Force a page reload so LinkedIn serves the classic rendering.
+    if (isActivityPage()) {
+      console.log("[AI Detector] Activity page via SPA — reloading for classic DOM");
+      location.reload();
+      return;
+    }
+
     if (isSupportedPage()) {
-      // Immediate scan + delayed re-scans to catch late-rendering posts.
       boot();
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 500);
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 1500);
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 3000);
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 5000);
-
-      // Activity pages reached via SPA ("Show all →") can take much longer
-      // to render data-urn elements. Keep retrying up to 15s.
-      if (isActivityPage()) {
-        setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 7000);
-        setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 10000);
-        setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 15000);
-      }
     }
   }
 
