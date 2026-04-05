@@ -1299,12 +1299,19 @@
     diagnosticNotified = false;
     if (isSupportedPage()) {
       // Immediate scan + delayed re-scans to catch late-rendering posts.
-      // Activity pages can take longer to render after SPA navigation.
       boot();
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 500);
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 1500);
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 3000);
       setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 5000);
+
+      // Activity pages reached via SPA ("Show all →") can take much longer
+      // to render data-urn elements. Keep retrying up to 15s.
+      if (isActivityPage()) {
+        setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 7000);
+        setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 10000);
+        setTimeout(() => { try { scanAndApply(); } catch (e) {} }, 15000);
+      }
     }
   }
 
