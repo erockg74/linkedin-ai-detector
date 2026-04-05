@@ -145,6 +145,57 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     chrome.storage.local.set({ aiDetectorStats: stats });
     sendResponse({ ok: true });
   }
+
+  // ─── Score a draft post from the composer (on-demand) ───────────────
+  if (msg.type === "SCORE_DRAFT") {
+    (async () => {
+      try {
+        const settings = await chrome.storage.local.get(["aiDetectorApiKey"]);
+        const apiKey = settings.aiDetectorApiKey;
+        if (!apiKey) {
+          sendResponse({ error: "No API key configured" });
+          return;
+        }
+        const text = (msg.text || "").trim();
+        if (text.length < 20) {
+          sendResponse({ error: "Not enough text to score (need 20+ chars)" });
+          return;
+        }
+        const prompt = SCORING_PROMPT.replace("{post_text}", text);
+        const response = await fetch("https://api.anthropic.com/v1/messages", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-api-key": apiKey,
+            "anthropic-version": "2023-06-01",
+            "anthropic-dangerous-direct-browser-access": "true"
+          },
+          body: JSON.stringify({
+            model: HAIKU_MODEL,
+            max_tokens: HAIKU_MAX_TOKENS,
+            messages: [{ role: "user", content: prompt }]
+          })
+        });
+        if (!response.ok) {
+          sendResponse({ error: `API error: ${response.status}` });
+          return;
+        }
+        const data = await response.json();
+        const raw = data.content?.[0]?.text || "";
+        let cleaned = raw.trim();
+        if (cleaned.startsWith("```")) {
+          cleaned = cleaned.replace(/^```(?:json)?\s*/, "").replace(/\s*```$/, "");
+        }
+        const result = JSON.parse(cleaned);
+        const rawScore = parseInt(result.score, 10);
+        const score = rawScore === -1 ? -1 : Math.max(0, Math.min(100, rawScore));
+        sendResponse({ score, reason: result.reason || "" });
+      } catch (e) {
+        sendResponse({ error: e.message });
+      }
+    })();
+    return true; // async sendResponse
+  }
 });
 
 // ─── Parallel scoring with concurrency limit ────────────────────────────
