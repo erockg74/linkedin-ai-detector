@@ -1231,13 +1231,20 @@
 
   // ─── MutationObserver ──────────────────────────────────────────────────
 
+  let observedBody = null; // track which body element the observer is watching
+
   function boot() {
     if (contextValid()) {
       try { scanAndApply(); }
       catch (e) { console.warn("[AI Detector] scanAndApply error:", e); }
     }
 
-    if (observer) return;
+    // Re-attach observer if document.body changed (SPA navigation can swap it)
+    if (observer && observedBody === document.body) return;
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
 
     try {
       observer = new MutationObserver(() => {
@@ -1259,6 +1266,7 @@
       });
 
       observer.observe(document.body, { childList: true, subtree: true });
+      observedBody = document.body;
     } catch (e) {
       console.warn("[AI Detector] Observer setup error:", e);
       observer = null;
@@ -1294,6 +1302,7 @@
 
   function onNavigate() {
     if (location.pathname === lastPath) return;
+    console.log("[AI Detector] SPA navigation detected:", lastPath, "→", location.pathname);
     lastPath = location.pathname;
     zeroResultCount = 0;
     diagnosticNotified = false;
