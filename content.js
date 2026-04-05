@@ -1131,13 +1131,20 @@
       tooltipEl.textContent = text;
     }
     const r = anchor.getBoundingClientRect();
-    tooltipEl.style.top = (r.top - 8) + "px";
-    tooltipEl.style.left = r.left + "px";
+    // Position below and right-aligned to the pill
+    tooltipEl.style.top = (r.bottom + 8) + "px";
+    tooltipEl.style.left = r.right + "px";
     requestAnimationFrame(() => {
       const tt = tooltipEl.getBoundingClientRect();
-      tooltipEl.style.top = (r.top - tt.height - 8) + "px";
-      if (tt.right > window.innerWidth - 8) {
-        tooltipEl.style.left = (window.innerWidth - tt.width - 8) + "px";
+      // Right-justify: align tooltip's right edge with pill's right edge
+      tooltipEl.style.left = (r.right - tt.width) + "px";
+      // If it overflows left, shift right
+      if (tt.left < 8) {
+        tooltipEl.style.left = "8px";
+      }
+      // If it overflows bottom, flip above the pill
+      if (r.bottom + 8 + tt.height > window.innerHeight - 8) {
+        tooltipEl.style.top = (r.top - tt.height - 8) + "px";
       }
       tooltipEl.classList.add("visible");
     });
