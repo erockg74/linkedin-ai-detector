@@ -916,8 +916,9 @@
       return;
     }
 
-    const scoreClass = score >= 90 ? "ai-detector-score-high" :
-                       score >= 70 ? "ai-detector-score-mid" :
+    // Color based on user's threshold: red = above, amber = within 15 pts below, green = well below
+    const scoreClass = score >= threshold ? "ai-detector-score-high" :
+                       score >= threshold - 15 ? "ai-detector-score-mid" :
                        "ai-detector-score-low";
 
     const badge = document.createElement("div");
